@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AmPu 3.0 - Laboratorio de Probabilidad y Estadística (Portable)</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <!-- KaTeX para fórmulas -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/katex.min.css">
+    <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/katex.min.js"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/contrib/auto-render.min.js"
+           onload="renderMathInElement(document.body);"></script>
+</head>
+<body>
+    <nav class="navbar">
+        <div class="logo">AmPu 3.0 Portable</div>
+        <div class="nav-links">
+            <a href="#" onclick="showTab('distribuciones')">Distribuciones</a>
+            <a href="#" onclick="showTab('muestreo')">Muestreo</a>
+            <a href="#" onclick="showTab('descriptiva')">Descriptiva</a>
+            <a href="#" onclick="showTab('probabilidad')">Probabilidad</a>
+            <a href="#" onclick="showTab('inferencia')">Inferencia</a>
+            <a href="#" onclick="showTab('simulacion')">Simulación</a>
+            <a href="#" onclick="showTab('teoria')">Teoría</a>
+        </div>
+        <div class="theme-toggle">
+            <button id="themeBtn" onclick="toggleTheme()">Tema: Claro</button>
+        </div>
+    </nav>
+
+    <main class="container">
+        <div id="tab-content" class="tab-content">
+            <!-- Contenido dinámico cargado por JS -->
+        </div>
+    </main>
+
+    <div id="loading" class="loading-overlay" style="display: none;">
+        <div class="spinner"></div>
+        <p>Calculando...</p>
+    </div>
+
+    <script src="{{ url_for('static', filename='script.js') }}"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            loadTab('distribuciones');
+            loadPreferences();
+        });
+    </script>
+</body>
+</html>
