@@ -2,7 +2,7 @@
 
 ## Definición formal
 
-Distribución normal de media 0 y varianza 1, conocida como campana de Gauss. En AmPu 3.0 se parametriza exactamente como en `scipy.stats`;
+Distribución normal de media 0 y varianza 1, conocida como campana de Gauss. En AmPu 3.1 se parametriza exactamente como en `scipy.stats`;
 los eventos fuera del soporte reciben masa/densidad 0.
 
 ## Parámetros y rango

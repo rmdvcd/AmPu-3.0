@@ -2,7 +2,7 @@
 
 ## Definición formal
 
-Suma de $k$ esperas exponenciales independientes con la misma tasa $\lambda$; $k$ entero. En AmPu 3.0 se parametriza exactamente como en `scipy.stats`;
+Suma de $k$ esperas exponenciales independientes con la misma tasa $\lambda$; $k$ entero. En AmPu 3.1 se parametriza exactamente como en `scipy.stats`;
 los eventos fuera del soporte reciben masa/densidad 0.
 
 ## Parámetros y rango

@@ -284,6 +284,39 @@ export function boton(texto, opciones = {}) {
   return nodo;
 }
 
+/* ------------------------------------------------------------------ */
+/* Exportación                                                         */
+/* ------------------------------------------------------------------ */
+
+/** Etiqueta e icono de cada formato que acepta `/api/exportar`. */
+export const FORMATOS_EXPORTACION = {
+  pdf: { texto: "PDF", icono: "documento", descripcion: "Informe completo con tablas y gráfico" },
+  xlsx: { texto: "Excel", icono: "tabla", descripcion: "Tablas en un libro de cálculo" },
+  png: { texto: "PNG", icono: "grafico", descripcion: "Solo el gráfico como imagen" },
+  csv: { texto: "CSV", icono: "tabla", descripcion: "La primera tabla como texto separado por comas" },
+};
+
+/**
+ * Crea el grupo de botones de exportación de una vista.
+ *
+ * @param {string[]} formatos Formatos disponibles, en el orden en que se pintan.
+ * @param {(formato: string, boton: HTMLButtonElement) => void} alExportar Acción.
+ */
+export function botonesExportar(formatos, alExportar, { variante = "secundario", pequeno = true } = {}) {
+  return formatos
+    .filter((formato) => FORMATOS_EXPORTACION[formato])
+    .map((formato) => {
+      const { texto, icono: nombreIcono, descripcion } = FORMATOS_EXPORTACION[formato];
+      return boton(texto, {
+        variante,
+        pequeno,
+        icono: nombreIcono,
+        titulo: `Exportar ${descripcion.toLowerCase()}`,
+        onClick: (evento) => alExportar(formato, evento.currentTarget),
+      });
+    });
+}
+
 export function iconoBoton(nombre, { etiqueta, onClick, titulo, clase = "", deshabilitado = false } = {}) {
   const nodo = el("button", {
     class: `icono-boton ${clase}`.trim(),

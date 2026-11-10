@@ -2,7 +2,7 @@
 
 ## Definición formal
 
-Cuenta el número de **fracasos** antes de alcanzar el éxito número $r$. En AmPu 3.0 se parametriza exactamente como en `scipy.stats`;
+Cuenta el número de **fracasos** antes de alcanzar el éxito número $r$. En AmPu 3.1 se parametriza exactamente como en `scipy.stats`;
 los eventos fuera del soporte reciben masa/densidad 0.
 
 ## Parámetros y rango

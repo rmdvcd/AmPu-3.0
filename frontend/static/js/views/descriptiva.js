@@ -15,6 +15,7 @@ import {
   segmentado,
   anunciar,
   pliegue,
+  botonesExportar,
 } from "../ui.js";
 import { icono } from "../icons.js";
 import { dibujar, graficoCaja, calcularHistograma, calcularECDF } from "../chart.js";
@@ -655,9 +656,7 @@ export async function montar(host) {
       icono: "tabla",
       acciones: [
         boton("Copiar", { variante: "fantasma", pequeno: true, icono: "copiar", onClick: () => copiar(resumenTexto()) }),
-        boton("Excel", { variante: "fantasma", pequeno: true, icono: "descargar", onClick: (e) => exportar("xlsx", e.currentTarget) }),
-        boton("PDF", { variante: "fantasma", pequeno: true, icono: "documento", onClick: (e) => exportar("pdf", e.currentTarget) }),
-        boton("PNG", { variante: "fantasma", pequeno: true, icono: "grafico", onClick: (e) => exportar("png", e.currentTarget) }),
+        ...botonesExportar(["pdf", "xlsx", "png", "csv"], (formato, nodo) => exportar(formato, nodo), { variante: "fantasma" }),
       ],
       contenido: tabla({ ...configTablaResumen(r), maximo: 40, total: 19 }),
     });
@@ -767,6 +766,10 @@ export async function montar(host) {
       { nombre: "Resumen", ...configTablaResumen(resultado) },
       { nombre: "Frecuencias", ...resultado.frecuencias },
     ];
+    if (formato === "png" && !figura) {
+      toast("Este conjunto no permite dibujar un histograma para exportar como imagen.", { tipo: "aviso" });
+      return;
+    }
     await conCarga(botonNodo, async () => {
       try {
         await api.exportar({

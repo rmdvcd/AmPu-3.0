@@ -2,7 +2,7 @@
 
 ## Definición formal
 
-Familia flexible de probabilidades/proporciones en el intervalo unitario. En AmPu 3.0 se parametriza exactamente como en `scipy.stats`;
+Familia flexible de probabilidades/proporciones en el intervalo unitario. En AmPu 3.1 se parametriza exactamente como en `scipy.stats`;
 los eventos fuera del soporte reciben masa/densidad 0.
 
 ## Parámetros y rango

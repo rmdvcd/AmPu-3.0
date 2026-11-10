@@ -2,7 +2,7 @@
 
 ## Definición formal
 
-Tiempo de espera general positivo de forma $k$ y escala $\theta$. En AmPu 3.0 se parametriza exactamente como en `scipy.stats`;
+Tiempo de espera general positivo de forma $k$ y escala $\theta$. En AmPu 3.1 se parametriza exactamente como en `scipy.stats`;
 los eventos fuera del soporte reciben masa/densidad 0.
 
 ## Parámetros y rango

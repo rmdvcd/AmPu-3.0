@@ -17,6 +17,7 @@ import {
   renderMath,
   pliegue,
   anunciar,
+  botonesExportar,
 } from "../ui.js";
 import { icono } from "../icons.js";
 import { dibujar } from "../chart.js";
@@ -505,8 +506,7 @@ export async function montar(host) {
           icono: "copiar",
           onClick: () => copiar(`ŷ = ${ecuacionTexto(resultado)}`),
         }),
-        boton("PDF", { variante: "secundario", pequeno: true, icono: "documento", onClick: (e) => exportar("pdf", e.currentTarget) }),
-        boton("Excel", { variante: "secundario", pequeno: true, icono: "tabla", onClick: (e) => exportar("xlsx", e.currentTarget) }),
+        ...botonesExportar(["pdf", "xlsx", "png", "csv"], (formato, nodo) => exportar(formato, nodo)),
       ],
       contenido: el(
         "div",

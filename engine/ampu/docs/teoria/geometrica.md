@@ -2,7 +2,7 @@
 
 ## Definición formal
 
-Cuenta los **intentos hasta** el primer éxito independiente con probabilidad $p$. En AmPu 3.0 se parametriza exactamente como en `scipy.stats`;
+Cuenta los **intentos hasta** el primer éxito independiente con probabilidad $p$. En AmPu 3.1 se parametriza exactamente como en `scipy.stats`;
 los eventos fuera del soporte reciben masa/densidad 0.
 
 ## Parámetros y rango

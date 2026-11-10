@@ -2005,7 +2005,7 @@ def api_exportar():
         "pdf": "application/pdf",
         "xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         "excel": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        "csv": "text/csv; charset=utf-8",
+        "csv": "text/csv",
         "png": "image/png",
         "json": "application/json",
     }

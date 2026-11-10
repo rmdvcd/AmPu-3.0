@@ -14,6 +14,7 @@ import {
   fmtP,
   fmtPorcentaje,
   anunciar,
+  botonesExportar,
 } from "../ui.js";
 import { icono } from "../icons.js";
 import { dibujar } from "../chart.js";
@@ -66,11 +67,11 @@ function crearCampoNumerico(id, etiqueta, valor, { min = null, max = null, ayuda
 }
 
 
-async function exportarSimulacion(botonNodo, { titulo, resumen, tablas, figura, estado }) {
+async function exportarSimulacion(botonNodo, { titulo, resumen, tablas, figura, estado }, formato = "pdf") {
   await conCarga(botonNodo, async () => {
     try {
       await api.exportar({
-        formato: "pdf",
+        formato,
         titulo: `${titulo} · AmPu 3.1`,
         resumen,
         tablas,
@@ -78,7 +79,7 @@ async function exportarSimulacion(botonNodo, { titulo, resumen, tablas, figura, 
         vista: "simulacion",
         estado,
       });
-      toast("Informe PDF generado", { tipo: "ok" });
+      toast(`Archivo ${formato.toUpperCase()} generado`, { tipo: "ok" });
     } catch (error) {
       if (!esCancelacion(error)) toast(error.message, { tipo: "error" });
     }
@@ -156,18 +157,14 @@ function herramientaPi(pendiente) {
           icono: "pi",
           acciones: [
             boton("Copiar", { variante: "fantasma", pequeno: true, icono: "copiar", onClick: () => copiar(`π ≈ ${datos.estimacion.valor}`) }),
-            boton("PDF", {
-              variante: "secundario",
-              pequeno: true,
-              icono: "documento",
-              onClick: (e) => exportarSimulacion(e.currentTarget, {
+            ...botonesExportar(["pdf", "xlsx", "png", "csv"], (formato, nodo) =>
+              exportarSimulacion(nodo, {
                 titulo: "Monte Carlo · estimación de π",
                 resumen: `π ≈ ${datos.estimacion.valor}\nError absoluto: ${datos.error_absoluto}\nIntervalo: [${datos.estimacion.intervalo[0]}, ${datos.estimacion.intervalo[1]}]`,
                 tablas: [{ nombre: "Estimación", columnas: ["Métrica", "Valor"], filas: [["Estimación", datos.estimacion.valor], ["π exacto", Math.PI], ["Error absoluto", datos.error_absoluto], ["Error estándar", datos.estimacion.error_estandar], ["Límite inferior", datos.estimacion.intervalo[0]], ["Límite superior", datos.estimacion.intervalo[1]], ["Simulaciones", datos.estimacion.n]] }],
                 figura: { series: [{ nombre: "Estimación", x: datos.convergencia.n, y: datos.convergencia.valor, tipo: "linea" }], xlabel: "Simulaciones", ylabel: "π estimado", titulo: "Convergencia" },
                 estado: { tipo: "pi", n: datos.estimacion.n, semilla: campoSemilla.valor() },
-              }),
-            }),
+              }, formato)),
           ],
           contenido: el(
             "div",
@@ -269,18 +266,14 @@ function herramientaIntegral(pendiente) {
           subtitulo: `Intervalo [${fmtNum(datos.intervalo_integracion[0])}, ${fmtNum(datos.intervalo_integracion[1])}] · ${datos.nota}`,
           icono: "sigma",
           acciones: [
-            boton("PDF", {
-              variante: "secundario",
-              pequeno: true,
-              icono: "documento",
-              onClick: (e) => exportarSimulacion(e.currentTarget, {
+            ...botonesExportar(["pdf", "xlsx", "png", "csv"], (formato, nodo) =>
+              exportarSimulacion(nodo, {
                 titulo: `Integral de ${datos.etiqueta}`,
                 resumen: `Estimación: ${datos.estimacion.valor}\nValor exacto: ${datos.referencia.valor}\nError absoluto: ${datos.error_absoluto}`,
                 tablas: [{ nombre: "Integral", columnas: ["Métrica", "Valor"], filas: [["Estimación", datos.estimacion.valor], ["Valor exacto", datos.referencia.valor], ["Error absoluto", datos.error_absoluto], ["Error estándar", datos.estimacion.error_estandar], ["Límite inferior", datos.estimacion.intervalo[0]], ["Límite superior", datos.estimacion.intervalo[1]]] }],
                 figura: { series: [{ nombre: datos.etiqueta, x: datos.curva.x, y: datos.curva.y, tipo: "linea" }], xlabel: "x", ylabel: "f(x)", titulo: "Función integrada" },
                 estado: { tipo: "integral", funcion: campoFuncion.valor(), n: campoN.valor(), semilla: campoSemilla.valor() },
-              }),
-            }),
+              }, formato)),
           ],
           contenido: el(
             "div",
@@ -403,11 +396,8 @@ function herramientaMuestra(pendiente, metaDatos) {
           subtitulo: `${datos.n} observaciones · ${resumenParametros(modelo, valores)}`,
           icono: "distribuciones",
           acciones: [
-            boton("PDF", {
-              variante: "secundario",
-              pequeno: true,
-              icono: "documento",
-              onClick: (e) => exportarSimulacion(e.currentTarget, {
+            ...botonesExportar(["pdf", "xlsx", "png", "csv"], (formato, nodo) =>
+              exportarSimulacion(nodo, {
                 titulo: `Muestra simulada · ${datos.nombre}`,
                 resumen: `${datos.n} observaciones · ${resumenParametros(modelo, valores)}`,
                 tablas: [
@@ -416,8 +406,7 @@ function herramientaMuestra(pendiente, metaDatos) {
                 ],
                 figura: { series: [{ nombre: "Densidad teórica", x: datos.teorica.x, y: datos.teorica.y, tipo: "linea" }], xlabel: "x", ylabel: "Densidad", titulo: datos.nombre },
                 estado: { tipo: "muestra", clave: modelo.clave, parametros: valores, n: datos.n, semilla },
-              }),
-            }),
+              }, formato)),
             boton("Ajustar esta muestra", {
               variante: "secundario",
               pequeno: true,
@@ -562,11 +551,8 @@ function herramientaAjuste(pendiente, metaDatos) {
           subtitulo: `${datos.n} observaciones · máximo verosimilitud`,
           icono: "objetivo",
           acciones: [
-            boton("PDF", {
-              variante: "secundario",
-              pequeno: true,
-              icono: "documento",
-              onClick: (e) => exportarSimulacion(e.currentTarget, {
+            ...botonesExportar(["pdf", "xlsx", "png", "csv"], (formato, nodo) =>
+              exportarSimulacion(nodo, {
                 titulo: `Ajuste de distribución · ${datos.clave}`,
                 resumen: `AIC: ${datos.aic}\nKS: ${datos.ks}\np-valor KS: ${datos.p_ks}\n${datos.nota}`,
                 tablas: [
@@ -575,8 +561,7 @@ function herramientaAjuste(pendiente, metaDatos) {
                 ],
                 figura: { series: [{ nombre: "Modelo ajustado", x: datos.curva.x, y: datos.curva.y, tipo: "linea" }], xlabel: "x", ylabel: "Densidad", titulo: `Ajuste ${datos.clave}` },
                 estado: { tipo: "ajuste", clave: datos.clave, datos: campoDatos.texto() },
-              }),
-            }),
+              }, formato)),
           ],
           contenido: el(
             "div",
@@ -732,18 +717,14 @@ function herramientaQQ(pendiente, metaDatos) {
           subtitulo: datos.nota,
           icono: "dispersion",
           acciones: [
-            boton("PDF", {
-              variante: "secundario",
-              pequeno: true,
-              icono: "documento",
-              onClick: (e) => exportarSimulacion(e.currentTarget, {
+            ...botonesExportar(["pdf", "xlsx", "png", "csv"], (formato, nodo) =>
+              exportarSimulacion(nodo, {
                 titulo: `QQ-plot · ${modelo.nombre}`,
                 resumen: datos.nota,
                 tablas: [{ nombre: "Cuantiles", columnas: ["Teórico", "Observado"], filas: datos.teoricos.map((v, i) => [v, datos.observados[i]]) }],
                 figura: { series: [{ nombre: "Cuantiles", x: datos.teoricos, y: datos.observados, tipo: "dispersion" }], xlabel: "Cuantiles teóricos", ylabel: "Cuantiles observados", titulo: "QQ-plot" },
                 estado: { tipo: "qq", clave: modelo.clave, parametros: parametrosUsados, datos: campoDatos.texto() },
-              }),
-            }),
+              }, formato)),
           ],
           contenido: el(
             "div",
@@ -812,6 +793,12 @@ export async function montar(host, parametro) {
     qq: () => herramientaQQ(pendiente, metaDatos),
   };
 
+  /* Los gráficos de simulación viven dentro de «contenido» y registran un
+     ResizeObserver; se desconecta al cambiar de herramienta o de vista. */
+  function desconectarGraficos() {
+    contenido.querySelectorAll(".grafico").forEach((nodo) => nodo._observadorGrafico?.disconnect());
+  }
+
   function renderSelector() {
     selector.replaceChildren();
     for (const h of HERRAMIENTAS) {
@@ -826,6 +813,7 @@ export async function montar(host, parametro) {
               activa = h.clave;
               history.replaceState(null, "", `#/simulacion/${h.clave}`);
               renderSelector();
+              desconectarGraficos();
               contenido.replaceChildren(constructores[h.clave]().nodo);
               anunciar(`Herramienta ${h.nombre} seleccionada.`);
             },
@@ -871,4 +859,6 @@ export async function montar(host, parametro) {
   renderSelector();
   contenido.append(constructores[activa]().nodo);
   pendiente = null;
+
+  return () => desconectarGraficos();
 }

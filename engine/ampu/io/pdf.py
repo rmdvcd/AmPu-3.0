@@ -91,7 +91,7 @@ def exportar_pdf(
         canvas.saveState()
         canvas.setFont("Helvetica", 8)
         canvas.setFillColor(colors.HexColor("#60758C"))
-        canvas.drawString(38, 22, "AmPu 3.0 · Informe estadístico")
+        canvas.drawString(38, 22, "AmPu 3.1 · Informe estadístico")
         canvas.drawRightString(landscape(A4)[0]-38, 22, f"Página {documento.page}")
         canvas.restoreState()
 
