@@ -1,10 +1,14 @@
-Flask==3.0.0
-Werkzeug==3.0.0
+# Dependencias de ejecución de AmPu 3.2 (Python 3.11).
+# Instalación local sin tocar el sistema:
+#   pip install --target vendor --no-compile -r requirements.txt
+Flask==3.1.3
+Werkzeug==3.1.9
+waitress==3.0.2          # servidor WSGI; sustituye al servidor de desarrollo de Flask
+Markdown==3.11.3
 numpy==1.26.0
+scipy==1.11.4            # 1.11.0 fue retirada de PyPI; 1.11.4 es la revisión de la misma serie
 pandas==2.1.0
-scipy==1.11.0
-matplotlib==3.8.0
-openpyxl==3.1.2
-reportlab==4.0.5
-pyinstaller==6.3.0
-markdown==3.5.1
+mpmath==1.4.1            # órdenes de magnitud de factoriales y combinaciones enormes
+matplotlib==3.8.0        # figuras de las exportaciones a PDF y PNG
+openpyxl==3.1.2          # exportación a Excel
+reportlab==4.0.5         # exportación a PDF

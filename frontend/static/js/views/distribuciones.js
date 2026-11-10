@@ -17,9 +17,13 @@ import {
   conCarga,
   fmtNum,
   fmtPorcentaje,
+  errorEnCampo,
+  textoError,
+  avisosMotor,
   renderMath,
   pliegue,
   segmentado,
+  comportamientoScroll,
 } from "../ui.js";
 import { icono } from "../icons.js";
 import { dibujar } from "../chart.js";
@@ -38,6 +42,7 @@ import {
   transito,
 } from "../store.js";
 import { api, ErrorApi, esCancelacion } from "../api.js";
+import { fmtEntrada, leerSerie } from "../entrada.js";
 
 const VISTAS_GRAFICO = [
   ["funcion", "Función"],
@@ -58,15 +63,16 @@ function dimensionEsperada(modelo) {
   return vector?.default?.length || 2;
 }
 
-function separarVector(texto) {
-  return String(texto || "")
-    .split(/[\s,;]+/)
-    .filter(Boolean)
-    .map((v) => Number(v.replace(",", ".")));
+/** Texto de un vector para mostrarlo: «(3; 2; 5)» no se confunde con decimales. */
+function formatearValorX(valor) {
+  if (Array.isArray(valor)) return `(${valor.map((v) => fmtNum(v)).join("; ")})`;
+  if (typeof valor === "number") return fmtNum(valor);
+  return valor ?? "";
 }
 
-function formatearValorX(valor) {
-  if (Array.isArray(valor)) return valor.join(", ");
+/** Texto de un vector para el campo de entrada: valores separados por espacios. */
+function textoCampoX(valor) {
+  if (Array.isArray(valor)) return valor.map((v) => (typeof v === "number" ? fmtEntrada(v) : String(v))).join(" ");
   return valor ?? "";
 }
 
@@ -104,7 +110,7 @@ export async function montar(host, parametro) {
         alerta({
           tipo: "error",
           titulo: "No se pudieron cargar los modelos",
-          texto: error.message,
+          texto: textoError(error),
           acciones: [boton("Reintentar", { icono: "actualizar", onClick: () => montar(host, parametro) })],
         })
       )
@@ -375,10 +381,12 @@ export async function montar(host, parametro) {
     campoX = campo({
       etiqueta: "Valor a evaluar",
       codigo: "x",
-      tipo: esMultiple ? "texto" : "numero",
-      valor: formatearValorX(estado.x),
+      tipo: esMultiple ? "serie" : "numero",
+      filas: 1,
+      nombre: "x",
+      valor: textoCampoX(estado.x),
       ayuda: esMultiple
-        ? `Introduce ${dimensionEsperada(modelo)} valores separados por comas.`
+        ? `Introduce ${dimensionEsperada(modelo)} valores separados por espacios.`
         : soporteTexto(modelo) || "Introduce un valor dentro o fuera del soporte; fuera de él la probabilidad es 0.",
       requerido: true,
       onInput: programarAuto,
@@ -588,14 +596,19 @@ export async function montar(host, parametro) {
       }
       x = valor;
     } else {
-      const partes = separarVector(campoX.texto());
+      const lectura = leerSerie(campoX.texto());
       const esperado = dimensionEsperada(modelo);
-      if (partes.length !== esperado || partes.some((v) => !Number.isFinite(v))) {
-        campoX.setError(`Introduce ${esperado} valores numéricos separados por comas.`);
+      if (lectura.error) {
+        campoX.setError(lectura.error.mensaje);
         campoX.enfocar();
         return { ok: false };
       }
-      x = partes;
+      if (lectura.valores.length !== esperado) {
+        campoX.setError(`Hacen falta ${esperado} valores separados por espacios (se han leído ${lectura.valores.length}).`);
+        campoX.enfocar();
+        return { ok: false };
+      }
+      x = lectura.valores;
     }
 
     const q = campoQ.valor();
@@ -632,7 +645,8 @@ export async function montar(host, parametro) {
         x,
         q,
         puntos: Number(campoPuntos.valor()) || 161,
-        semilla: Number(campoSemilla.valor()) || 42,
+        // La semilla 0 es válida: solo se usa 42 si el campo está vacío o no es un entero.
+        semilla: Number.isInteger(campoSemilla.valor()) ? campoSemilla.valor() : 42,
         intervalo,
       },
     };
@@ -649,11 +663,13 @@ export async function montar(host, parametro) {
     }
     resultadoHost.setAttribute("aria-busy", "true");
     if (!resultado && resultadoHost.childElementCount === 0) esqueletoPanel(resultadoHost, 1);
+    let estadoFinal = "ok";
 
     try {
       const datosResultado = await api.post("/api/distribucion/calcular", consulta.payload, { senal: controlador.signal });
       resultado = datosResultado;
       haCalculado = true;
+      resultadoHost.querySelector(".error-calculo")?.remove();
       renderResultado();
       persistir();
       registrarHistorial({
@@ -665,50 +681,62 @@ export async function montar(host, parametro) {
       });
       anunciar(`Resultado actualizado para ${modelo.nombre}.`);
     } catch (error) {
-      if (esCancelacion(error)) return;
-      if (auto) {
-        if (!resultado) renderInicial();
+      if (esCancelacion(error)) {
+        estadoFinal = "cancelado";
         return;
       }
-      mostrarError(error);
+      // También en cálculo automático: un error nunca se traga ni se deja a la vista
+      // un resultado anterior como si fuese el actual.
+      estadoFinal = "error";
+      mostrarError(error, { silencioso: auto });
     } finally {
       resultadoHost.setAttribute("aria-busy", "false");
       const nodo = host.querySelector("#estado-calculo");
-      if (nodo) {
+      if (nodo && estadoFinal === "ok") {
         nodo.replaceChildren(
           el("span", { class: "pulso" }),
           `Actualizado ${new Date().toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" })}`
         );
+      } else if (nodo && estadoFinal === "error") {
+        nodo.replaceChildren(icono("alerta", { tamano: 13 }), resultado ? "Sin actualizar: el resultado mostrado es anterior" : "No se pudo calcular");
+      } else if (nodo) {
+        nodo.replaceChildren();
       }
     }
   }
 
-  function mostrarError(error) {
-    const mensaje = error instanceof ErrorApi ? error.message : "No se pudo completar el cálculo.";
-    const bloque = panel({
-      titulo: "No se pudo calcular",
-      icono: "alerta",
-      contenido: alerta({
-        tipo: "error",
-        titulo: "Revisa los datos",
-        texto: mensaje,
-        acciones: [
-          boton("Reintentar", {
-            variante: "secundario",
-            pequeno: true,
-            icono: "actualizar",
-            onClick: () => calcular({ forzar: true }),
-          }),
-        ],
+  function mostrarError(error, { silencioso = false } = {}) {
+    const mensaje = error instanceof ErrorApi ? textoError(error) : "No se pudo completar el cálculo.";
+    // Si el motor señala el campo culpable (un parámetro, x, q…), el error va junto a él.
+    const enCampo =
+      error instanceof ErrorApi &&
+      errorEnCampo(error, { ...(campos?.campos || {}), x: campoX, q: campoQ, a: campoA, b: campoB, intervalo: campoA, semilla: campoSemilla, puntos: campoPuntos });
+    const titulo = error?.tipo === "timeout" ? "El cálculo tardó demasiado" : enCampo ? "Revisa el campo marcado" : "Revisa los datos";
+    const acciones = [
+      boton("Reintentar", {
+        variante: "secundario",
+        pequeno: true,
+        icono: "actualizar",
+        onClick: () => calcular({ forzar: true }),
       }),
-    });
-    if (!resultado) resultadoHost.replaceChildren(bloque);
-    else {
-      const previo = resultadoHost.querySelector(".alerta--error");
-      if (previo) previo.remove();
-      resultadoHost.prepend(alerta({ tipo: "error", titulo: "El último cálculo falló", texto: mensaje }));
+    ];
+    resultadoHost.querySelector(".error-calculo")?.remove();
+    if (!resultado) {
+      const bloque = panel({ titulo: "No se pudo calcular", icono: "alerta", contenido: alerta({ tipo: "error", titulo, texto: mensaje, acciones }) });
+      bloque.classList.add("error-calculo");
+      resultadoHost.replaceChildren(bloque);
+    } else {
+      const aviso = alerta({
+        tipo: "error",
+        titulo: "El último cálculo falló: el resultado de abajo corresponde a los valores anteriores",
+        texto: mensaje,
+        acciones,
+      });
+      aviso.classList.add("error-calculo");
+      resultadoHost.prepend(aviso);
     }
-    toast(mensaje, { tipo: "error" });
+    if (silencioso) anunciar(`Error: ${error.message}`);
+    else toast(mensaje, { tipo: "error" });
   }
 
   /* --------------------------- Resultados --------------------------- */
@@ -743,11 +771,12 @@ export async function montar(host, parametro) {
     let yDomain = null;
 
     if (vistaGrafico === "acumulada") {
-      serie = { nombre: "P(X ≤ x)", x: curva.x, y: curva.acumulada, color: "var(--grafico-2)" };
+      // La CDF de una variable discreta es una función escalonada, no una curva.
+      serie = { nombre: "P(X ≤ x)", x: curva.x, y: curva.acumulada, color: "var(--grafico-2)", escalon: esDiscreta, trazo: "" };
       ylabel = "Probabilidad acumulada";
       yDomain = [0, 1];
     } else if (vistaGrafico === "cola") {
-      serie = { nombre: "P(X ≥ x)", x: curva.x, y: curva.cola, color: "var(--grafico-3)" };
+      serie = { nombre: "P(X ≥ x)", x: curva.x, y: curva.cola, color: "var(--grafico-3)", escalon: esDiscreta, trazo: "" };
       ylabel = "Probabilidad de cola";
       yDomain = [0, 1];
     } else {
@@ -759,6 +788,7 @@ export async function montar(host, parametro) {
         color: "var(--grafico-1)",
         tipo: esDiscreta ? "barra" : "linea",
         relleno: !esDiscreta,
+        trazo: "",
       };
       ylabel = nombre;
     }
@@ -812,7 +842,7 @@ export async function montar(host, parametro) {
         await api.exportar(
           {
             formato,
-            titulo: `${modelo.nombre} · AmPu 3.1`,
+            titulo: `${modelo.nombre} · AmPu 3.2`,
             resumen: `${resumenTexto()}\n\n${resultado.nota || ""}`,
             tablas: [{ nombre: "Resultado", ...tablaActual }],
             figura: cfg
@@ -832,7 +862,7 @@ export async function montar(host, parametro) {
         );
         toast(`Archivo ${formato.toUpperCase()} generado`, { tipo: "ok" });
       } catch (error) {
-        if (!esCancelacion(error)) toast(error.message, { tipo: "error" });
+        if (!esCancelacion(error)) toast(textoError(error), { tipo: "error" });
       } finally {
         controladoresExport.delete(controladorLocal);
       }
@@ -867,8 +897,8 @@ export async function montar(host, parametro) {
       resultado.intervalo
         ? kpi({
             etiqueta: resultado.intervalo.etiqueta,
-            valor: fmtPorcentaje(resultado.intervalo.probabilidad, 2),
-            detalle: `a = ${fmtNum(resultado.intervalo.a)}, b = ${fmtNum(resultado.intervalo.b)}`,
+            valor: fmtNum(resultado.intervalo.probabilidad, { decimales: 6 }),
+            detalle: `${fmtPorcentaje(resultado.intervalo.probabilidad, 2)} · a = ${fmtNum(resultado.intervalo.a)}, b = ${fmtNum(resultado.intervalo.b)}`,
             tono: "ok",
           })
         : kpi({
@@ -910,7 +940,7 @@ export async function montar(host, parametro) {
       "section",
       { class: "panel panel--resultado" },
       cabeceraResultado,
-      el("div", { class: "panel__cuerpo" }, el("div", { class: "pila" }, kpis, momentos, resultado.nota ? el("p", { class: "aviso-mini" }, icono("info", { tamano: 13 }), resultado.nota) : null))
+      el("div", { class: "panel__cuerpo" }, el("div", { class: "pila" }, kpis, momentos, avisosMotor(resultado.avisos), resultado.nota ? el("p", { class: "aviso-mini" }, icono("info", { tamano: 13 }), resultado.nota) : null))
     );
 
     const hostGrafico = el("div");
@@ -1016,7 +1046,7 @@ export async function montar(host, parametro) {
       if (inicial) calcular({ auto: true });
       else calcular({ auto: true, forzar: true });
     }
-    if (!inicial) window.scrollTo({ top: 0, behavior: "smooth" });
+    if (!inicial) window.scrollTo({ top: 0, behavior: comportamientoScroll() });
   }
 
   renderLista();

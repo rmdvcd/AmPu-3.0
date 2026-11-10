@@ -107,8 +107,12 @@ export const ATAJOS = [
   { teclas: ["Ctrl", "K"], texto: "Buscar una herramienta, modelo o lección" },
   { teclas: ["Ctrl", "Enter"], texto: "Calcular en el formulario activo" },
   { teclas: ["Ctrl", "Shift", "L"], texto: "Alternar tema claro y oscuro" },
-  { teclas: ["?"], texto: "Abrir la ayuda y los atajos" },
-  { teclas: ["Esc"], texto: "Cerrar diálogos y avisos" },
+  { teclas: ["F1"], texto: "Abrir la ayuda y los atajos (también «?» fuera de un campo)" },
+  { teclas: ["Esc"], texto: "Cancelar el cálculo en curso; cerrar diálogos y avisos" },
+  { teclas: ["Alt", "G"], texto: "Ir al gráfico" },
+  { teclas: ["←", "→"], texto: "En un gráfico: recorrer los valores punto a punto" },
+  { teclas: ["+", "−", "0"], texto: "En un gráfico: acercar, alejar y restablecer la vista" },
+  { teclas: ["Shift", "←/→"], texto: "En un gráfico ampliado: desplazar la vista" },
 ];
 
 /** Herramienta que practica cada lección de teoría. */

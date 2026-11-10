@@ -1,6 +1,6 @@
-"""Arranque de AmPu 3.1 en escritorio.
+"""Arranque de AmPu en escritorio.
 
-Inicia el servidor Flask local y abre el navegador cuando la aplicación ya
+Inicia el servidor local (Waitress; Flask como respaldo) y abre el navegador cuando la aplicación ya
 responde. Se puede usar tanto desde el código fuente como desde el ejecutable
 generado con ``build_exe.py``.
 
@@ -8,6 +8,9 @@ Variables de entorno:
     AMPU_HOST   interfaz de escucha (por defecto 127.0.0.1)
     PORT        puerto (por defecto 5000)
     AMPU_NO_BROWSER=1  no abre el navegador automáticamente
+    AMPU_HOSTS_PERMITIDOS  nombres de host extra aceptados (separados por comas; * = todos)
+    AMPU_PERMITIR_IFRAME=1 permite incrustar AmPu en un marco (desactivado por defecto)
+    AMPU_LIMITE_SEGUNDOS   plazo orientativo de cálculo por petición (por defecto 20)
 """
 
 from __future__ import annotations
@@ -50,7 +53,7 @@ def main() -> None:
     url = f"http://{'127.0.0.1' if host in ('0.0.0.0', '::') else host}:{puerto}"
 
     hilo = threading.Thread(
-        target=lambda: ampu_app.app.run(host=host, port=puerto, debug=False, use_reloader=False, threaded=True),
+        target=lambda: ampu_app.servir(host, puerto),
         daemon=True,
     )
     hilo.start()
@@ -58,13 +61,13 @@ def main() -> None:
     if os.environ.get("AMPU_NO_BROWSER") != "1" and _esperar_servidor(url):
         webbrowser.open(url)
 
-    print(f"AmPu 3.1 disponible en {url}")
+    print(f"AmPu {ampu_app.VERSION_APP} disponible en {url}")
     print("Pulsa Ctrl+C para cerrar.")
     try:
         while hilo.is_alive():
             time.sleep(0.5)
     except KeyboardInterrupt:
-        print("\nCerrando AmPu 3.1…")
+        print("\nCerrando AmPu…")
 
 
 if __name__ == "__main__":

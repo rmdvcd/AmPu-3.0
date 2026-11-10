@@ -44,29 +44,30 @@ class Parametro:
         vector = self.tipo.startswith("vector_")
         if vector:
             if isinstance(valor, (str, bytes)) or not isinstance(valor, (list, tuple, np.ndarray)):
-                raise ParametroInvalidoError(f"{self.nombre}: introduce valores separados por comas.")
+                raise ParametroInvalidoError(f"{self.nombre}: introduce varios valores separados por espacios.", campo=self.nombre)
             try:
                 elementos = list(valor)
             except (TypeError, ValueError) as exc:
-                raise ParametroInvalidoError(f"{self.nombre}: vector inválido.") from exc
+                raise ParametroInvalidoError(f"{self.nombre}: vector inválido.", campo=self.nombre) from exc
             if len(elementos) < 2:
-                raise ParametroInvalidoError(f"{self.nombre}: el vector necesita al menos dos elementos.")
+                raise ParametroInvalidoError(f"{self.nombre}: el vector necesita al menos dos elementos.", campo=self.nombre)
             return tuple(self._escalar(v) for v in elementos)
         return self._escalar(valor)
 
     def _escalar(self, valor: object) -> int | float:
         entero = self.tipo.endswith("entero")
         if isinstance(valor, (bool, np.bool_)) or not isinstance(valor, Real):
-            raise ParametroInvalidoError(f"{self.nombre}: se requiere un número {'entero' if entero else 'real'}.")
+            raise ParametroInvalidoError(f"{self.nombre}: se requiere un número {'entero' if entero else 'real'}.", campo=self.nombre)
         if not np.isfinite(float(valor)) or (entero and not float(valor).is_integer()):
-            raise ParametroInvalidoError(f"{self.nombre}: valor no finito o no entero.")
+            raise ParametroInvalidoError(
+                f"{self.nombre} debe ser un número {'entero' if entero else 'finito'}.", campo=self.nombre)
         numero = int(valor) if entero else float(valor)
         if self.minimo is not None and (numero < self.minimo if self.incluir_minimo else numero <= self.minimo):
             op = "≥" if self.incluir_minimo else ">"
-            raise ParametroInvalidoError(f"{self.nombre} debe ser {op} {self.minimo:g}.")
+            raise ParametroInvalidoError(f"{self.nombre} debe ser {op} {self.minimo:g}.".replace(".", ",", self.minimo != int(self.minimo)), campo=self.nombre)
         if self.maximo is not None and (numero > self.maximo if self.incluir_maximo else numero >= self.maximo):
             op = "≤" if self.incluir_maximo else "<"
-            raise ParametroInvalidoError(f"{self.nombre} debe ser {op} {self.maximo:g}.")
+            raise ParametroInvalidoError(f"{self.nombre} debe ser {op} {self.maximo:g}.".replace(".", ",", self.maximo != int(self.maximo)), campo=self.nombre)
         return numero
 
 
@@ -87,12 +88,13 @@ def validar_parametros(
     permitidos = {p.nombre for p in esquema}
     desconocidos = set(valores) - permitidos
     if desconocidos:
-        raise ParametroInvalidoError(f"Parámetros desconocidos: {', '.join(sorted(desconocidos))}.")
+        raise ParametroInvalidoError(f"Parámetros desconocidos: {', '.join(sorted(desconocidos))}.",
+                                     campo=sorted(desconocidos)[0])
     salida = {}
     for param in esquema:
         valor = valores.get(param.nombre, param.default)
         if valor is None:
-            raise ParametroInvalidoError(f"Falta el parámetro {param.nombre}.")
+            raise ParametroInvalidoError(f"Falta el parámetro {param.nombre}.", campo=param.nombre)
         salida[param.nombre] = param.validar(valor)
     if regla:
         regla(salida)
@@ -112,21 +114,21 @@ def validar_probabilidades(q: object) -> float | np.ndarray:
         if a.dtype.kind not in "iuf" or np.any(~np.isfinite(a)) or np.any((a < 0) | (a > 1)):
             raise ValueError
     except (TypeError, ValueError) as exc:
-        raise ParametroInvalidoError("El cuantil q debe estar entre 0 y 1.") from exc
+        raise ParametroInvalidoError("El cuantil q debe estar entre 0 y 1.", campo="q") from exc
     return float(a) if a.ndim == 0 else a.astype(float)
 
 
 def validar_semilla(seed: int | None) -> int | None:
     """Comprueba la semilla del generador PCG64 de NumPy."""
     if seed is not None and (isinstance(seed, bool) or not isinstance(seed, Integral) or seed < 0 or seed >= 2**64):
-        raise ParametroInvalidoError("La semilla debe ser un entero de 0 a 2⁶⁴−1.")
+        raise ParametroInvalidoError("La semilla debe ser un entero de 0 a 2⁶⁴−1.", campo="semilla")
     return int(seed) if seed is not None else None
 
 
 def validar_tamano(size: int) -> int:
     """Limita el número de sorteos para evitar asignaciones accidentales masivas."""
     if isinstance(size, bool) or not isinstance(size, Integral) or not 1 <= size <= 1_000_000:
-        raise ParametroInvalidoError("El tamaño debe ser un entero de 1 a 1 000 000.")
+        raise ParametroInvalidoError("El tamaño debe ser un entero de 1 a 1 000 000.", campo="n")
     return int(size)
 
 

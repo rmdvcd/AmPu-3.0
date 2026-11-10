@@ -3,6 +3,7 @@
  * Sin framework: funciones pequeñas que devuelven nodos reales del DOM.
  */
 
+import { comasComoSeparadores, fmtEntrada, leerMatriz, leerNumero, leerSerie, resumenLectura, tieneComasDudosas } from "./entrada.js";
 import { icono, svgIcono } from "./icons.js";
 
 /** Configuración viva que comparten formato y gráficos (la actualiza store.js). */
@@ -81,12 +82,22 @@ export function iconoSvg(nombre, tamano) {
   return svgIcono(nombre, tamano);
 }
 
+/** «smooth» salvo que el sistema o las preferencias pidan reducir el movimiento. */
+export function comportamientoScroll() {
+  const reducido =
+    document.documentElement.dataset.movimiento === "reducido" ||
+    (window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
+  return reducido ? "auto" : "smooth";
+}
+
 /* ------------------------------------------------------------------ */
 /* Formato numérico                                                    */
 /* ------------------------------------------------------------------ */
 
 export function fmtNum(valor, opciones = {}) {
   if (valor === null || valor === undefined || valor === "") return "—";
+  // Vectores (modelos multivariantes): «(1,6; 2,4; 4)», con «;» para no chocar con la coma decimal.
+  if (Array.isArray(valor)) return `(${valor.map((v) => fmtNum(v, opciones)).join("; ")})`;
   if (typeof valor === "string") {
     if (valor === "∞" || valor === "−∞" || valor === "-∞" || valor === "+∞") return valor === "+∞" ? "∞" : valor;
     const limpio = valor.trim();
@@ -120,13 +131,48 @@ export function fmtNum(valor, opciones = {}) {
   }
   let texto;
   try {
-    texto = new Intl.NumberFormat("es-ES", opcionesIntl).format(valor);
+    texto = formatearEs(valor, opcionesIntl);
   } catch {
-    texto = valor.toFixed(decimales);
+    texto = valor.toFixed(decimales).replace(".", ",");
   }
   return signo && valor > 0 ? `+${texto}` : texto;
 }
 
+const SUPERINDICES = { "-": "⁻", 0: "⁰", 1: "¹", 2: "²", 3: "³", 4: "⁴", 5: "⁵", 6: "⁶", 7: "⁷", 8: "⁸", 9: "⁹" };
+const superindice = (n) => String(n).replace(/[-\d]/g, (c) => SUPERINDICES[c]);
+
+/**
+ * Formato numérico en español con las convenciones de AmPu:
+ *  - coma decimal;
+ *  - miles agrupados con espacio fino (U+202F), nunca con punto, para que
+ *    «1.234» no pueda leerse a la vez como mil doscientos y como uno coma dos;
+ *  - notación científica como «1,23 × 10⁻⁵» en lugar de «1,23E-5».
+ */
+function formatearEs(valor, opcionesIntl) {
+  const partes = new Intl.NumberFormat("es-ES", opcionesIntl).formatToParts(valor);
+  let texto = "";
+  let exponente = "";
+  let enExponente = false;
+  for (const parte of partes) {
+    if (parte.type === "group") texto += "\u202f";
+    else if (parte.type === "exponentSeparator") enExponente = true;
+    else if (parte.type === "exponentMinusSign") exponente += "-";
+    else if (parte.type === "exponentInteger") exponente += parte.value;
+    else if (parte.type === "minusSign" && !enExponente) texto += "−";
+    else texto += parte.value;
+  }
+  if (enExponente) {
+    const n = Number(exponente);
+    return n === 0 ? texto : `${texto} × 10${superindice(n)}`;
+  }
+  // Intl (es-ES) no agrupa los números de cuatro cifras; AmPu sí, por coherencia.
+  return texto.replace(/^(−?)(\d)(\d{3})(?=,|$)/, "$1$2\u202f$3");
+}
+
+/**
+ * p-valor legible. Nunca muestra «0» ni oculta el orden de magnitud: un
+ * p = 4,8 × 10⁻³² se enseña así, no como «< 0,0001».
+ */
 export function fmtP(p) {
   if (p === null || p === undefined || p === "") return "—";
   if (typeof p === "string") {
@@ -135,14 +181,41 @@ export function fmtP(p) {
     p = numero;
   }
   if (!Number.isFinite(p)) return "—";
-  if (p < 0.0001) return "< 0,0001";
-  if (p > 0.9999) return "> 0,9999";
-  return fmtNum(p, { decimales: 4, notacion: "fija" });
+  if (p === 0) return "< 10⁻³⁰⁰";
+  if (p < 0.0001) return formatearEs(p, { notation: "scientific", maximumSignificantDigits: 3 });
+  if (p > 0.9999 && p < 1) return "> 0,9999";
+  return formatearEs(p, { minimumFractionDigits: 4, maximumFractionDigits: 4 });
+}
+
+/** Valor con toda su precisión útil (12 cifras significativas), para «copiar» y detalles. */
+export function fmtPreciso(valor) {
+  if (typeof valor !== "number" || !Number.isFinite(valor)) return fmtNum(valor);
+  const abs = Math.abs(valor);
+  if (abs !== 0 && (abs < 1e-6 || abs >= 1e15)) {
+    return formatearEs(valor, { notation: "scientific", maximumSignificantDigits: 12 });
+  }
+  return formatearEs(valor, { maximumSignificantDigits: 12, useGrouping: true });
+}
+
+/** Intervalo «[a; b]» que respeta las cotas infinitas de los intervalos unilaterales. */
+export function fmtIntervalo(intervalo, opciones = {}) {
+  if (!Array.isArray(intervalo) || intervalo.length !== 2) return "—";
+  const [a, b] = intervalo;
+  const infinito = (v) => typeof v === "string" && v.includes("∞");
+  const izq = infinito(a) ? "(−∞" : `[${fmtNum(a, opciones)}`;
+  const der = infinito(b) ? "+∞)" : `${fmtNum(b, opciones)}]`;
+  return `${izq}; ${der}`;
 }
 
 export function fmtPorcentaje(valor, decimales = 1) {
   if (valor === null || valor === undefined || typeof valor !== "number" || !Number.isFinite(valor)) return "—";
-  return `${new Intl.NumberFormat("es-ES", { maximumFractionDigits: decimales }).format(valor * 100)} %`;
+  const cien = valor * 100;
+  const umbral = 10 ** -decimales;
+  const minimo = new Intl.NumberFormat("es-ES", { maximumFractionDigits: decimales }).format(umbral);
+  // Un porcentaje distinto de 0 (o de 100) nunca se muestra como «0 %» (o «100 %»).
+  if (cien > 0 && cien < umbral / 2) return `< ${minimo} %`;
+  if (cien < 100 && cien > 100 - umbral / 2) return `> ${new Intl.NumberFormat("es-ES", { maximumFractionDigits: decimales }).format(100 - umbral)} %`;
+  return `${new Intl.NumberFormat("es-ES", { maximumFractionDigits: decimales }).format(cien).replace("-", "−")} %`;
 }
 
 export function fmtEnteroGrande(texto) {
@@ -443,6 +516,8 @@ export function campo(opciones = {}) {
     deshabilitado = false,
     autofoco = false,
     claseControl = "",
+    fraccion = false,
+    nombre = null,
   } = opciones;
 
   const envoltura = el("div", { class: "campo" });
@@ -509,7 +584,8 @@ export function campo(opciones = {}) {
       deshabilitado,
       "aria-required": requerido ? "true" : null,
     });
-    if (valor !== null && valor !== undefined) control.value = String(valor);
+    // Los números se muestran con coma decimal, como los escribe el usuario.
+    if (valor !== null && valor !== undefined) control.value = esNumero && typeof valor === "number" ? fmtEntrada(valor) : String(valor);
     if (sufijo) {
       envolturaControl = el("div", { class: "campo__control-envoltura" }, control, el("span", { class: "campo__sufijo" }, sufijo));
     } else {
@@ -525,27 +601,66 @@ export function campo(opciones = {}) {
   }
 
   const ayudaNodo = ayuda && tipo !== "checkbox" ? el("p", { class: "campo__ayuda", id: `${id}-ayuda` }, ayuda) : null;
-  const contador = tipo === "serie" || tipo === "matriz" ? el("span", { class: "campo__contador" }) : null;
-  if (contador) {
-    if (ayudaNodo) ayudaNodo.append(" ", contador);
-    else envoltura.append(el("p", { class: "campo__ayuda" }, contador));
-  }
+  // Vista previa de interpretación: enseña, mientras se escribe, qué números ha leído AmPu.
+  const contador = tipo === "serie" || tipo === "matriz"
+    ? el("div", { class: "campo__lectura", id: `${id}-lectura`, "aria-live": "polite" })
+    : null;
+  if (contador) envoltura.append(contador);
+  if (nombre) envoltura.dataset.campo = nombre;
 
   const errorNodo = el("p", { class: "campo__error", id: `${id}-error`, role: "alert" });
   if (error) errorNodo.textContent = error;
   envoltura.append(errorNodo);
   if (ayudaNodo) {
     if (!ayudaNodo.isConnected) envoltura.insertBefore(ayudaNodo, errorNodo);
-    control.setAttribute("aria-describedby", [ayudaNodo.id, `${id}-error`].join(" "));
+    control.setAttribute("aria-describedby", [ayudaNodo.id, contador ? contador.id : null, `${id}-error`].filter(Boolean).join(" "));
   } else {
-    control.setAttribute("aria-describedby", `${id}-error`);
+    control.setAttribute("aria-describedby", [contador ? contador.id : null, `${id}-error`].filter(Boolean).join(" "));
   }
+
+  const leerLectura = () => (tipo === "matriz" ? leerMatriz(control.value || "") : leerSerie(control.value || "", { fraccion }));
 
   const actualizarContador = () => {
     if (!contador) return;
     const texto = control.value || "";
-    const n = (texto.match(/-?\d+(?:[.,]\d+)?(?:[eE][+-]?\d+)?/g) || []).length;
-    contador.textContent = n ? `${n} ${n === 1 ? "valor" : "valores"}` : "sin valores";
+    const lectura = leerLectura();
+    contador.replaceChildren();
+    contador.classList.remove("campo__lectura--error", "campo__lectura--aviso");
+    const convertir = () =>
+      el("button", {
+        type: "button",
+        class: "campo__lectura-accion",
+        onClick: () => {
+          control.value = comasComoSeparadores(control.value);
+          control.dispatchEvent(new Event("input", { bubbles: true }));
+          control.focus();
+        },
+      }, "Usar las comas como separadores");
+    if (!texto.trim()) {
+      contador.append(el("span", {}, "Separa los valores con espacios, punto y coma o líneas. Decimales con coma o punto."));
+      return;
+    }
+    if (lectura.error) {
+      contador.classList.add("campo__lectura--error");
+      contador.append(
+        el("span", { class: "campo__lectura-texto" }, lectura.error.mensaje, lectura.error.sugerencia ? ` ${lectura.error.sugerencia}` : ""),
+        lectura.error.separable ? convertir() : null
+      );
+      return;
+    }
+    if (tipo === "matriz") {
+      const filas = lectura.filas;
+      const anchos = new Set(filas.map((f) => f.length));
+      const forma = anchos.size === 1 ? `${filas.length} × ${filas[0]?.length ?? 0}` : `${filas.length} filas de distinta longitud`;
+      contador.append(el("span", { class: "campo__lectura-texto" }, `Leído: tabla ${forma}`, filas[0] ? ` · primera fila: ${resumenLectura(filas[0], 5).replace(/^\d+ valor(es)?: /, "")}` : ""));
+    } else {
+      contador.append(el("span", { class: "campo__lectura-texto" }, `Leído: ${resumenLectura(lectura.valores)}`));
+    }
+    if (lectura.avisos.length) {
+      contador.classList.add("campo__lectura--aviso");
+      for (const aviso of lectura.avisos.slice(0, 2)) contador.append(el("span", { class: "campo__lectura-aviso" }, aviso));
+      if (tieneComasDudosas(texto) && lectura.avisos.some((a) => a.includes("un solo valor"))) contador.append(convertir());
+    }
   };
   if (contador) actualizarContador();
 
@@ -554,8 +669,10 @@ export function campo(opciones = {}) {
     const texto = control.value.trim();
     if (tipo === "numero" || tipo === "entero") {
       if (texto === "") return null;
-      const numero = Number(texto.replace(",", "."));
-      return Number.isFinite(numero) ? numero : texto;
+      // Con fracciones (1/3) se envía el texto: el motor conserva la forma exacta.
+      if (fraccion && texto.includes("/")) return texto;
+      const lectura = leerNumero(texto);
+      return lectura.error ? texto : lectura.valor;
     }
     return texto;
   };
@@ -586,7 +703,7 @@ export function campo(opciones = {}) {
     setValor: (v) => {
       if (tipo === "checkbox") control.checked = Boolean(v);
       else {
-        control.value = v ?? "";
+        control.value = (tipo === "numero" || tipo === "entero") && typeof v === "number" ? fmtEntrada(v) : v ?? "";
         if (tipo === "select" && v !== null && v !== undefined && control.value !== String(v) && control.options.length) {
           control.selectedIndex = 0;
         }
@@ -595,6 +712,8 @@ export function campo(opciones = {}) {
     },
     setError,
     limpiarError: () => setError(""),
+    nombre,
+    lectura: () => (contador ? leerLectura() : null),
     enfocar: () => {
       control.focus();
       if (typeof control.select === "function" && tipo !== "checkbox") control.select();
@@ -605,7 +724,21 @@ export function campo(opciones = {}) {
         setError("Este campo es obligatorio.");
         return false;
       }
+      if (contador && control.value.trim()) {
+        const lectura = leerLectura();
+        if (lectura.error) {
+          setError(lectura.error.mensaje);
+          return false;
+        }
+      }
       const numero = leerValor();
+      if ((tipo === "numero" || tipo === "entero") && control.value.trim()) {
+        const lectura = leerNumero(control.value, { fraccion });
+        if (lectura.error) {
+          setError(`${lectura.error.mensaje}${lectura.error.sugerencia ? ` ${lectura.error.sugerencia}` : ""}`);
+          return false;
+        }
+      }
       if ((tipo === "numero" || tipo === "entero") && typeof numero === "number") {
         if (tipo === "entero" && !Number.isInteger(numero)) {
           setError("Debe ser un número entero.");
@@ -629,6 +762,44 @@ export function campo(opciones = {}) {
   };
   if (autofoco) setTimeout(() => control.focus(), 30);
   return objeto;
+}
+
+/**
+ * Coloca un error del motor junto al campo que lo causó (y lo enfoca).
+ * `campos` es un objeto { idDelMotor: campo } o una lista de campos con `nombre`.
+ * Devuelve true si encontró el campo; si no, la vista debe mostrar el error de forma general.
+ */
+export function errorEnCampo(error, campos) {
+  const clave = error && error.campo;
+  if (!clave || !campos) return false;
+  let destino = null;
+  if (Array.isArray(campos)) destino = campos.find((c) => c && c.nombre === clave) || null;
+  else destino = campos[clave] || campos[String(clave).split(".")[0]] || null;
+  if (!destino || typeof destino.setError !== "function") return false;
+  const sugerencia = error.detalle && error.detalle.sugerencia ? ` ${error.detalle.sugerencia}` : "";
+  destino.setError(`${error.message}${sugerencia}`);
+  if (typeof destino.enfocar === "function") destino.control.focus({ preventScroll: false });
+  return true;
+}
+
+/** Texto completo de un error del motor: mensaje + sugerencia de recuperación. */
+export function textoError(error) {
+  const sugerencia = error && error.detalle && error.detalle.sugerencia;
+  return sugerencia ? `${error.message} ${sugerencia}` : (error && error.message) || "Error desconocido.";
+}
+
+/** Lista de avisos del motor (supuestos dudosos, lecturas a revisar) como alerta. */
+export function avisosMotor(avisos, titulo = "Conviene revisar") {
+  const lista = (avisos || []).filter(Boolean);
+  if (!lista.length) return null;
+  const nodo = alerta({
+    tipo: "aviso",
+    titulo,
+    texto: lista.length === 1 ? lista[0] : el("ul", { class: "avisos-motor__lista" }, lista.map((a) => el("li", {}, a))),
+  });
+  nodo.classList.add("avisos-motor");
+  nodo.setAttribute("role", "note");
+  return nodo;
 }
 
 function textoVacio(valor) {
@@ -661,13 +832,24 @@ export function segmentado({ opciones, valor, onCambio, etiqueta = null, clase =
   return nodo;
 }
 
-export function pestanas({ opciones, valor, onCambio, etiqueta = "Secciones" }) {
+export function pestanas({ opciones, valor, onCambio, etiqueta = "Secciones", panel = null }) {
   const nodo = el("div", { class: "pestanas", role: "tablist", "aria-label": etiqueta });
   const botones = new Map();
+  const base = uid("pestana");
   const definir = (nuevo, emitir = false) => {
-    botones.forEach((b, v) => b.setAttribute("aria-selected", String(v === nuevo)));
+    botones.forEach((b, v) => {
+      const activa = v === nuevo;
+      b.setAttribute("aria-selected", String(activa));
+      b.tabIndex = activa ? 0 : -1; // foco itinerante: Tab entra en la pestaña activa
+      if (activa && panel) panel.setAttribute("aria-labelledby", b.id);
+    });
     if (emitir && onCambio) onCambio(nuevo);
   };
+  if (panel) {
+    if (!panel.id) panel.id = `${base}-panel`;
+    panel.setAttribute("role", "tabpanel");
+    if (!panel.hasAttribute("tabindex")) panel.tabIndex = 0;
+  }
   for (const [v, texto] of opciones) {
     const b = el(
       "button",
@@ -675,7 +857,9 @@ export function pestanas({ opciones, valor, onCambio, etiqueta = "Secciones" }) 
         class: "pestana",
         type: "button",
         role: "tab",
+        id: `${base}-${botones.size}`,
         "aria-selected": String(v === valor),
+        "aria-controls": panel ? panel.id : null,
         onClick: () => definir(v, true),
       },
       texto
@@ -683,6 +867,22 @@ export function pestanas({ opciones, valor, onCambio, etiqueta = "Secciones" }) 
     botones.set(v, b);
     nodo.append(b);
   }
+  // Patrón de pestañas WAI-ARIA: flechas, Inicio y Fin mueven y activan.
+  nodo.addEventListener("keydown", (evento) => {
+    const claves = [...botones.keys()];
+    const actual = claves.findIndex((v) => botones.get(v) === document.activeElement);
+    if (actual < 0) return;
+    let destino = actual;
+    if (evento.key === "ArrowRight" || evento.key === "ArrowDown") destino = (actual + 1) % claves.length;
+    else if (evento.key === "ArrowLeft" || evento.key === "ArrowUp") destino = (actual - 1 + claves.length) % claves.length;
+    else if (evento.key === "Home") destino = 0;
+    else if (evento.key === "End") destino = claves.length - 1;
+    else return;
+    evento.preventDefault();
+    definir(claves[destino], true);
+    botones.get(claves[destino]).focus();
+  });
+  definir(valor);
   nodo.definir = definir;
   return nodo;
 }

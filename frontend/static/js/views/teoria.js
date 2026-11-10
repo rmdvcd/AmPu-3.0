@@ -4,6 +4,7 @@ import {
   boton,
   badge,
   alerta,
+  textoError,
   estadoVacio,
   esqueletoPanel,
   copiar,
@@ -11,6 +12,7 @@ import {
   latex,
   renderMath,
   anunciar,
+  comportamientoScroll,
 } from "../ui.js";
 import { icono } from "../icons.js";
 import { api, esCancelacion } from "../api.js";
@@ -77,7 +79,7 @@ export async function montar(host, parametro) {
   try {
     metaDatos = await cargarMeta();
   } catch (error) {
-    host.append(alerta({ tipo: "error", titulo: "El motor no responde", texto: error.message }));
+    host.append(alerta({ tipo: "error", titulo: "El motor no responde", texto: textoError(error) }));
     return null;
   }
 
@@ -85,7 +87,7 @@ export async function montar(host, parametro) {
   try {
     lecciones = await api.get("/api/teoria/lista");
   } catch (error) {
-    host.append(alerta({ tipo: "error", titulo: "No se pudo cargar la biblioteca", texto: error.message }));
+    host.append(alerta({ tipo: "error", titulo: "No se pudo cargar la biblioteca", texto: textoError(error) }));
     return null;
   }
 
@@ -227,7 +229,7 @@ export async function montar(host, parametro) {
             icono: "alerta",
             contenido: alerta({
               tipo: "error",
-              texto: error.message,
+              texto: textoError(error),
               acciones: [boton("Reintentar", { variante: "secundario", pequeno: true, icono: "actualizar", onClick: () => seleccionar(clave) })],
             }),
           })
@@ -294,7 +296,7 @@ export async function montar(host, parametro) {
                     class: `toc-enlace toc-enlace--n${item.nivel}`,
                     onClick: () => {
                       const destino = cuerpo.querySelector(`#${CSS.escape(item.id)}`);
-                      destino?.scrollIntoView({ behavior: "smooth", block: "start" });
+                      destino?.scrollIntoView({ behavior: comportamientoScroll(), block: "start" });
                     },
                   },
                   item.texto
@@ -370,7 +372,7 @@ export async function montar(host, parametro) {
       pie
     );
     renderMath(articulo);
-    articulo.scrollIntoView({ behavior: "smooth", block: "start" });
+    articulo.scrollIntoView({ behavior: comportamientoScroll(), block: "start" });
     registrarHistorial({ titulo: `Teoría · ${contenido.titulo}`, detalle: `${contenido.minutos} min`, ruta: `teoria/${contenido.clave}`, tipo: "teoria", icono: "teoria" });
     anunciar(`Lección ${contenido.titulo} abierta.`);
   }

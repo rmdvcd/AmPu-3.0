@@ -1,13 +1,48 @@
 /**
  * Gráficos SVG propios: sin dependencias, accesibles y adaptados al tema.
- * Tipos: líneas/áreas, barras, dispersión y caja. Incluye tooltip, leyenda
- * interactiva, navegación por teclado y una tabla de datos equivalente.
+ * Tipos: líneas/áreas, escalón, barras, dispersión y caja. Incluye tooltip,
+ * leyenda interactiva, navegación por teclado, zoom/desplazamiento y una tabla
+ * de datos equivalente.
+ *
+ * Accesibilidad: cada serie se distingue por color **y** por trazo (continuo,
+ * rayas, puntos…) o por forma del marcador, de modo que el gráfico se lee
+ * igual en escala de grises o con daltonismo.
  */
 
 import { el, fmtNum, fmtCompacto, debounce } from "./ui.js";
 
 const NS = "http://www.w3.org/2000/svg";
 const COLORES = ["var(--grafico-1)", "var(--grafico-2)", "var(--grafico-3)", "var(--grafico-4)", "var(--grafico-5)"];
+/** Trazos por orden de serie: continuo, rayas, puntos, raya-punto, rayas largas. */
+const TRAZOS = ["", "7 4", "2 4", "9 3 2 3", "14 4"];
+const FORMAS = ["circulo", "cuadrado", "triangulo", "rombo"];
+let contadorClip = 0;
+
+function marcador(forma, cx, cy, r, attrs = {}) {
+  if (forma === "cuadrado") return svg("rect", { x: cx - r, y: cy - r, width: 2 * r, height: 2 * r, ...attrs });
+  if (forma === "triangulo") {
+    const h = r * 1.25;
+    return svg("path", { d: `M${cx} ${cy - h} L${cx + h} ${cy + h * 0.8} L${cx - h} ${cy + h * 0.8} Z`, ...attrs });
+  }
+  if (forma === "rombo") {
+    const h = r * 1.3;
+    return svg("path", { d: `M${cx} ${cy - h} L${cx + h} ${cy} L${cx} ${cy + h} L${cx - h} ${cy} Z`, ...attrs });
+  }
+  return svg("circle", { cx, cy, r, ...attrs });
+}
+
+/** Ruta en escalón (continua por la derecha), propia de una CDF discreta. */
+function rutaEscalon(puntos) {
+  let d = "";
+  let previo = null;
+  for (const [x, y] of puntos) {
+    if (x === null || y === null) continue;
+    if (previo === null) d += `M${x.toFixed(2)} ${y.toFixed(2)} `;
+    else d += `L${x.toFixed(2)} ${previo.toFixed(2)} L${x.toFixed(2)} ${y.toFixed(2)} `;
+    previo = y;
+  }
+  return d.trim();
+}
 
 function svg(tag, attrs = {}) {
   const nodo = document.createElementNS(NS, tag);
@@ -88,12 +123,24 @@ function prepararSeries(cfg) {
         ...serie,
         nombre: serie.nombre || `Serie ${i + 1}`,
         color: serie.color || COLORES[i % COLORES.length],
+        trazo: serie.trazo ?? TRAZOS[i % TRAZOS.length],
+        forma: serie.forma || FORMAS[i % FORMAS.length],
         puntos,
         orden: i,
       };
     })
     .filter((s) => s.puntos.length);
   return series;
+}
+
+/** Muestra de leyenda que reproduce el trazo o el marcador de la serie, no solo su color. */
+function muestraLeyenda(serie, cfg) {
+  const tipo = serie.tipo || ({ barras: "barra", lineas: "linea", linea: "linea", dispersion: "dispersion" }[cfg.tipo] || cfg.tipo || "linea");
+  const nodo = svg("svg", { class: "leyenda__trazo", viewBox: "0 0 26 10", width: 26, height: 10, "aria-hidden": "true" });
+  if (tipo === "barra") nodo.append(svg("rect", { x: 7, y: 1, width: 12, height: 8, rx: 1.5, fill: serie.color, opacity: 0.85 }));
+  else if (tipo === "dispersion") nodo.append(marcador(serie.forma, 13, 5, 3.2, { fill: serie.color }));
+  else nodo.append(svg("line", { x1: 1, x2: 25, y1: 5, y2: 5, stroke: serie.color, "stroke-width": 2.2, "stroke-dasharray": serie.trazo || null, "stroke-linecap": "round" }));
+  return nodo;
 }
 
 function resumenTabla(series, categorias) {
@@ -155,20 +202,48 @@ export function dibujar(host, cfg = {}) {
     xMin = -0.5;
     xMax = Math.max(0.5, categorias.length - 0.5);
   } else {
-    const valoresX = visibles.flatMap((s) => s.puntos.map((p) => numero(p.x))).filter((v) => v !== null);
+    /* Las barras con anchura en unidades del eje (histogramas) ocupan medio ancho a cada lado. */
+    const valoresX = visibles
+      .flatMap((s) => {
+        const medio = Number.isFinite(s.anchoDatos) && s.anchoDatos > 0 ? s.anchoDatos / 2 : 0;
+        return s.puntos.flatMap((p) => {
+          const v = numero(p.x);
+          return v === null ? [] : medio ? [v - medio, v + medio] : [v];
+        });
+      })
+      .filter((v) => v !== null);
     xMin = Math.min(...valoresX);
     xMax = Math.max(...valoresX);
   }
- 	if (cfg.dominioX) {
+  if (cfg.dominioX) {
     [xMin, xMax] = cfg.dominioX;
   }
+  /* Zoom y desplazamiento: la vista se guarda en el contenedor y se descarta si cambian los datos. */
+  const xTotal = [xMin, xMax];
+  const firmaDatos = `${xMin}|${xMax}|${visibles.length}`;
+  if (host._firmaVista !== firmaDatos) {
+    host._vista = null;
+    host._firmaVista = firmaDatos;
+  }
+  const conZoom = !categorias && cfg.zoom !== false && xMax > xMin;
+  const ampliado = conZoom && Array.isArray(host._vista);
+  if (ampliado) [xMin, xMax] = host._vista;
   const xExt = extension(xMin, xMax, categorias ? Math.min(8, categorias.length) : 6);
   if (categorias) {
     xExt.min = -0.5;
     xExt.max = categorias.length - 0.5;
   }
+  if (ampliado) {
+    xExt.min = xMin;
+    xExt.max = xMax;
+    xExt.ticks = xExt.ticks.filter((t) => t >= xMin && t <= xMax);
+  }
 
-  const valoresY = visibles.flatMap((s) => s.puntos.map((p) => p.y));
+  let valoresY = visibles.flatMap((s) => s.puntos.map((p) => p.y));
+  if (ampliado) {
+    const dentro = visibles.flatMap((s) => s.puntos.filter((p) => numero(p.x) >= xMin && numero(p.x) <= xMax).map((p) => p.y));
+    if (dentro.length) valoresY = dentro;
+  }
   let yMin = Math.min(...valoresY);
   let yMax = Math.max(...valoresY);
   if (cfg.yCero) {
@@ -191,6 +266,12 @@ export function dibujar(host, cfg = {}) {
   nodoSvg.append(svg("desc", {}, cfg.descripcion || "Gráfico generado con los datos del cálculo actual."));
   const g = svg("g");
   nodoSvg.append(g);
+  const idClip = `ampu-clip-${++contadorClip}`;
+  const clip = svg("clipPath", { id: idClip });
+  clip.append(svg("rect", { x: margen.izquierda, y: margen.arriba - 2, width: anchoPlot, height: altoPlot + 4 }));
+  nodoSvg.append(clip);
+  /* Las series se recortan al área de dibujo (necesario al ampliar). */
+  const gSeries = svg("g", { "clip-path": `url(#${idClip})` });
 
   /* Regiones de rechazo o bandas destacadas */
   for (const region of cfg.regiones || []) {
@@ -339,8 +420,12 @@ export function dibujar(host, cfg = {}) {
         const y = escY(p.y);
         const base = escY(Math.max(yExt.min, 0));
         const alto = base - y;
-        const w = Math.max(1, anchoBase * (categorias ? 0.62 : 0.82));
-        g.append(
+        /* Histograma: la barra abarca exactamente su clase en el eje numérico, sin huecos. */
+        const enDatos = !categorias && Number.isFinite(serie.anchoDatos) && serie.anchoDatos > 0;
+        const w = enDatos
+          ? Math.max(1, escX(xVal + serie.anchoDatos / 2) - escX(xVal - serie.anchoDatos / 2) - 1)
+          : Math.max(1, anchoBase * (categorias ? 0.62 : 0.82));
+        gSeries.append(
           svg("rect", {
             x: x - w / 2,
             y: alto >= 0 ? y : base,
@@ -356,15 +441,14 @@ export function dibujar(host, cfg = {}) {
       for (const p of serie.puntos) {
         const xVal = categorias ? p.i : numero(p.x);
         if (xVal === null) continue;
-        g.append(
-          svg("circle", {
-            class: "serie-punto",
-            cx: escX(xVal),
-            cy: escY(p.y),
-            r: serie.puntos.length > 500 ? 1.6 : serie.puntos.length > 120 ? 2.1 : 2.8,
-            fill: p.color || serie.color,
-            opacity: serie.opacidad ?? 0.72,
-          })
+        gSeries.append(
+          marcador(
+            serie.puntos.length > 500 ? "circulo" : serie.forma,
+            escX(xVal),
+            escY(p.y),
+            serie.puntos.length > 500 ? 1.6 : serie.puntos.length > 120 ? 2.1 : 2.8,
+            { class: "serie-punto", fill: p.color || serie.color, opacity: serie.opacidad ?? 0.72 }
+          )
         );
       }
     } else {
@@ -380,17 +464,27 @@ export function dibujar(host, cfg = {}) {
             `M${primero[0].toFixed(2)} ${base.toFixed(2)} L` +
             puntos.map(([x, y]) => `${x.toFixed(2)} ${y.toFixed(2)}`).join(" L") +
             ` L${ultimo[0].toFixed(2)} ${base.toFixed(2)} Z`;
-          g.append(svg("path", { class: "serie-area", d: area, fill: serie.color }));
+          gSeries.append(svg("path", { class: "serie-area", d: area, fill: serie.color }));
         }
       }
-      g.append(svg("path", { class: "serie-linea", d: rutaLinea(puntos), stroke: serie.color }));
-      if (serie.marcadores) {
+      gSeries.append(
+        svg("path", {
+          class: "serie-linea",
+          d: serie.escalon ? rutaEscalon(puntos) : rutaLinea(puntos),
+          stroke: serie.color,
+          "stroke-dasharray": serie.trazo || null,
+          "stroke-linejoin": serie.escalon ? "miter" : null,
+        })
+      );
+      if (serie.marcadores || (serie.escalon && puntos.length <= 60)) {
         for (const [x, y] of puntos) {
-          g.append(svg("circle", { cx: x, cy: y, r: 2.4, fill: serie.color, class: "serie-punto" }));
+          gSeries.append(svg("circle", { cx: x, cy: y, r: 2.4, fill: serie.color, class: "serie-punto" }));
         }
       }
     }
   }
+
+  g.append(gSeries);
 
   /* Marcador vertical */
   let marcadorX = null;
@@ -531,7 +625,70 @@ export function dibujar(host, cfg = {}) {
     cruz.setAttribute("opacity", "0");
   });
 
+  /* Zoom y desplazamiento horizontal */
+  const fijarVista = (min, max, { foco = false } = {}) => {
+    const total = xTotal[1] - xTotal[0];
+    let ancho_ = max - min;
+    if (!(ancho_ > 0) || ancho_ >= total * 0.999) {
+      host._vista = null;
+    } else {
+      ancho_ = Math.max(ancho_, total / 400);
+      min = Math.max(xTotal[0], Math.min(min, xTotal[1] - ancho_));
+      host._vista = [min, min + ancho_];
+    }
+    dibujar(host, cfg);
+    if (foco) host.querySelector("svg")?.focus({ preventScroll: true });
+  };
+  const hacerZoom = (factor, centro = (xExt.min + xExt.max) / 2, opciones = {}) => {
+    const izq = centro - (centro - xExt.min) * factor;
+    const der = centro + (xExt.max - centro) * factor;
+    fijarVista(izq, der, opciones);
+  };
+  const desplazar = (fraccion, opciones = {}) => {
+    if (!ampliado) return;
+    const paso = (xExt.max - xExt.min) * fraccion;
+    fijarVista(xExt.min + paso, xExt.max + paso, opciones);
+  };
+  if (conZoom) {
+    nodoSvg.addEventListener("wheel", (evento) => {
+      if (!evento.ctrlKey && !evento.metaKey) return; // sin Ctrl, la rueda sigue desplazando la página
+      evento.preventDefault();
+      const rect = nodoSvg.getBoundingClientRect();
+      const px = ((evento.clientX - rect.left) / rect.width) * ancho;
+      const centro = xExt.min + ((px - margen.izquierda) / anchoPlot) * (xExt.max - xExt.min);
+      hacerZoom(evento.deltaY < 0 ? 0.7 : 1 / 0.7, centro);
+    }, { passive: false });
+    let arrastre = null;
+    capa.addEventListener("pointerdown", (evento) => {
+      if (!ampliado || evento.button !== 0) return;
+      arrastre = evento.clientX;
+      capa.setPointerCapture?.(evento.pointerId);
+    });
+    capa.addEventListener("pointerup", (evento) => {
+      if (arrastre === null) return;
+      const rect = nodoSvg.getBoundingClientRect();
+      const dx = ((evento.clientX - arrastre) / rect.width) * ancho;
+      arrastre = null;
+      if (Math.abs(dx) > 4) desplazar(-dx / anchoPlot);
+    });
+    capa.addEventListener("dblclick", () => fijarVista(0, 0));
+    if (ampliado) capa.style.cursor = "grab";
+  }
+
   nodoSvg.addEventListener("keydown", (evento) => {
+    if (conZoom && !evento.ctrlKey && !evento.metaKey && !evento.altKey) {
+      if (evento.key === "+" || evento.key === "=") { evento.preventDefault(); hacerZoom(0.6, undefined, { foco: true }); return; }
+      if (evento.key === "-" || evento.key === "_") { evento.preventDefault(); hacerZoom(1 / 0.6, undefined, { foco: true }); return; }
+      if (evento.key === "0" || evento.key === "Escape") {
+        if (ampliado) { evento.preventDefault(); fijarVista(0, 0, { foco: true }); }
+        return;
+      }
+      if (evento.shiftKey && (evento.key === "ArrowLeft" || evento.key === "ArrowRight")) {
+        evento.preventDefault();
+        desplazar(evento.key === "ArrowLeft" ? -0.2 : 0.2, { foco: true });
+        return;
+      }
+    }
     if (!principal) return;
     let indice = indiceActivo.valor;
     if (evento.key === "ArrowRight") indice = Math.min(principal.puntos.length - 1, indice + 1);
@@ -541,8 +698,11 @@ export function dibujar(host, cfg = {}) {
     else return;
     evento.preventDefault();
     indiceActivo.valor = indice;
+    // Solo con teclado se anuncia el valor: con el ratón sería un torrente de lecturas.
+    globo.setAttribute("aria-live", "polite");
     mostrarGlobo(principal.puntos[indice], indice);
   });
+  capa.addEventListener("pointerenter", () => globo.setAttribute("aria-live", "off"));
 
   /* Leyenda */
   if (seriesTodas.length > 1 || seriesTodas[0].nombre) {
@@ -564,16 +724,29 @@ export function dibujar(host, cfg = {}) {
             dibujar(host, cfg);
           },
         },
-        el("span", { class: "leyenda__muestra", style: { background: serie.color } }),
+        muestraLeyenda(serie, cfg),
         serie.nombre
       );
       leyenda.append(item);
     }
     const pie = el("div", { class: "grafico__pie" }, leyenda);
+    if (conZoom) pie.append(controlesZoom());
     if (cfg.acciones) pie.append(cfg.acciones);
     host.append(pie);
-  } else if (cfg.acciones) {
-    host.append(el("div", { class: "grafico__pie" }, el("span"), cfg.acciones));
+  } else if (cfg.acciones || conZoom) {
+    host.append(el("div", { class: "grafico__pie" }, el("span"), conZoom ? controlesZoom() : null, cfg.acciones || null));
+  }
+
+  function controlesZoom() {
+    const botonZoom = (texto, etiqueta, accion, deshabilitado = false) =>
+      el("button", { type: "button", class: "grafico__zoom-boton", "aria-label": etiqueta, title: etiqueta, disabled: deshabilitado, onClick: accion }, texto);
+    return el(
+      "div",
+      { class: "grafico__zoom", role: "group", "aria-label": "Zoom del gráfico" },
+      botonZoom("−", "Alejar (tecla −)", () => hacerZoom(1 / 0.6), !ampliado),
+      botonZoom("+", "Acercar (tecla +)", () => hacerZoom(0.6)),
+      botonZoom("⟲", "Restablecer la vista (tecla 0)", () => fijarVista(0, 0), !ampliado)
+    );
   }
 
   /* Tabla de datos equivalente */
@@ -727,7 +900,38 @@ export function graficoCaja(host, datos) {
     g.append(t);
   });
   g.append(svg("line", { class: "eje-linea", x1: margen.izquierda, x2: margen.izquierda + anchoPlot, y1: margen.arriba + altoPlot, y2: margen.arriba + altoPlot }));
+  const atipicos = (datos.atipicos || []).map(numero).filter((v) => v !== null);
+  nodoSvg.append(
+    svg("desc", {}),
+  );
+  nodoSvg.querySelector("desc").textContent =
+    `Mínimo ${fmtNum(datos.min)}, primer cuartil ${fmtNum(datos.q1)}, mediana ${fmtNum(datos.mediana)}, ` +
+    `tercer cuartil ${fmtNum(datos.q3)}, máximo ${fmtNum(datos.max)}. Bigotes de ${fmtNum(datos.bigote_inf)} a ${fmtNum(datos.bigote_sup)}. ` +
+    `${atipicos.length} valores atípicos.`;
   host.append(nodoSvg);
+
+  /* Tabla de datos equivalente: lo mismo que el dibujo, en texto. */
+  const filas = [
+    ["Mínimo", datos.min],
+    ["Bigote inferior (dato más bajo dentro de la valla)", datos.bigote_inf],
+    ["Primer cuartil (Q1)", datos.q1],
+    ["Mediana", datos.mediana],
+    ["Tercer cuartil (Q3)", datos.q3],
+    ["Bigote superior (dato más alto dentro de la valla)", datos.bigote_sup],
+    ["Máximo", datos.max],
+    ["Valla inferior (Q1 − 1,5·IQR)", datos.valla_inf],
+    ["Valla superior (Q3 + 1,5·IQR)", datos.valla_sup],
+  ].filter(([, v]) => v !== undefined && v !== null);
+  const details = el("details", { class: "chart-datos" });
+  details.append(el("summary", {}, "Ver datos del diagrama"));
+  const cuerpo = el("tbody");
+  for (const [etiqueta, valor] of filas) cuerpo.append(el("tr", {}, el("th", { scope: "row" }, etiqueta), el("td", {}, fmtNum(valor, { decimales: 4 }))));
+  cuerpo.append(
+    el("tr", {}, el("th", { scope: "row" }, `Valores atípicos (${atipicos.length})`),
+      el("td", {}, atipicos.length ? atipicos.map((v) => fmtNum(v, { decimales: 4 })).join(" · ") : "ninguno"))
+  );
+  details.append(el("div", { class: "tabla-scroll" }, el("table", {}, el("thead", {}, el("tr", {}, el("th", { scope: "col" }, "Elemento"), el("th", { scope: "col" }, "Valor"))), cuerpo)));
+  host.append(details);
 }
 
 /* ------------------------------------------------------------------ */
