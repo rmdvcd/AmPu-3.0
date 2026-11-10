@@ -19,6 +19,7 @@ import {
   latex,
   pliegue,
   anunciar,
+  botonesExportar,
 } from "../ui.js";
 import { icono } from "../icons.js";
 import { dibujar } from "../chart.js";
@@ -662,8 +663,7 @@ export async function montar(host, parametro) {
       "div",
       { class: "panel__acciones" },
       boton("Copiar interpretación", { variante: "fantasma", pequeno: true, icono: "copiar", onClick: () => copiar(resumenTexto(spec, datos)) }),
-      boton("PDF", { variante: "secundario", pequeno: true, icono: "documento", onClick: (e) => exportar(spec, datos, "pdf", e.currentTarget) }),
-      boton("Excel", { variante: "secundario", pequeno: true, icono: "tabla", onClick: (e) => exportar(spec, datos, "xlsx", e.currentTarget) })
+      ...botonesExportar(["pdf", "xlsx", "png", "csv"], (formato, nodo) => exportar(spec, datos, formato, nodo))
     );
 
     const bloque = el(
@@ -702,6 +702,10 @@ export async function montar(host, parametro) {
     ];
     const extras = filasExtras(datos.extras);
     if (extras.length) tablas.push({ nombre: "Tamaños de efecto", columnas: ["Métrica", "Valor"], filas: extras });
+    if (formato === "png" && !cfg) {
+      toast("Esta prueba no tiene una distribución nula que exportar como imagen.", { tipo: "aviso" });
+      return;
+    }
     await conCarga(botonNodo, async () => {
       try {
         await api.exportar({

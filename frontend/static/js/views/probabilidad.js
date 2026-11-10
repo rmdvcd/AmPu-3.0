@@ -19,6 +19,7 @@ import {
   renderMath,
   iconoBoton,
   anunciar,
+  botonesExportar,
 } from "../ui.js";
 import { icono } from "../icons.js";
 import { dibujar } from "../chart.js";
@@ -32,11 +33,11 @@ const HERRAMIENTAS = [
   { clave: "variable", nombre: "Variable discreta", descripcion: "Esperanza, varianza y momentos de una PMF.", icono: "distribuciones" },
 ];
 
-async function exportarProbabilidad(botonNodo, payload) {
+async function exportarProbabilidad(botonNodo, payload, formato = "pdf") {
   await conCarga(botonNodo, async () => {
     try {
-      await api.exportar({ formato: "pdf", vista: "probabilidad", ...payload });
-      toast("Informe PDF generado", { tipo: "ok" });
+      await api.exportar({ formato, vista: "probabilidad", ...payload });
+      toast(`Archivo ${formato.toUpperCase()} generado`, { tipo: "ok" });
     } catch (error) {
       if (!esCancelacion(error)) toast(error.message, { tipo: "error" });
     }
@@ -225,18 +226,14 @@ function herramientaCombinatoria() {
           icono: "copiar",
           onClick: () => copiar(String(resultado.resultado)),
         }),
-        boton("PDF", {
-          variante: "secundario",
-          pequeno: true,
-          icono: "documento",
-          onClick: (e) => exportarProbabilidad(e.currentTarget, {
+        ...botonesExportar(["pdf", "xlsx", "csv"], (formato, nodo) =>
+          exportarProbabilidad(nodo, {
             titulo: `Combinatoria · ${resultado.etiqueta}`,
             resumen: `Resultado: ${resultado.resultado}\n${(resultado.pasos || []).join("\n")}`,
             tablas: [{ nombre: "Resultado", columnas: ["Métrica", "Valor"], filas: [["Etiqueta", resultado.etiqueta], ["Resultado", resultado.resultado], ["Dígitos", resultado.digitos]] }],
             formula: resultado.formula,
             estado: { tipo, n: campoN.valor(), k: campoK.valor(), conteos: campoConteos.texto() },
-          }),
-        }),
+          }, formato)),
       ],
       contenido: el(
         "div",
@@ -402,18 +399,14 @@ function herramientaCondicional() {
           icono: "objetivo",
           acciones: [
             boton("Copiar", { variante: "fantasma", pequeno: true, icono: "copiar", onClick: () => copiar(`P(A|B) = ${datos.resultado}`) }),
-            boton("PDF", {
-              variante: "secundario",
-              pequeno: true,
-              icono: "documento",
-              onClick: (e) => exportarProbabilidad(e.currentTarget, {
+            ...botonesExportar(["pdf", "xlsx", "csv"], (formato, nodo) =>
+              exportarProbabilidad(nodo, {
                 titulo: "Probabilidad condicional",
                 resumen: datos.interpretacion,
                 tablas: [{ nombre: "Probabilidades", columnas: ["Métrica", "Valor"], filas: [["P(A | B)", datos.resultado], ["P(A ∩ B)", datos.detalle.interseccion], ["P(B)", datos.detalle.condicion], ["P(A)", datos.detalle.pa]] }],
                 formula: datos.formula,
                 estado: { tipo: "condicional", interseccion: datos.detalle.interseccion, condicion: datos.detalle.condicion, pa: datos.detalle.pa },
-              }),
-            }),
+              }, formato)),
           ],
           contenido: el("div", { class: "pila" }, kpis, alerta({ tipo: "info", texto: datos.interpretacion })),
         }),
@@ -631,18 +624,14 @@ function herramientaBayes() {
               icono: "copiar",
               onClick: () => copiar(resultado.filas.map((f) => `${f.nombre}: ${fmtNum(f.posterior, { decimales: 6 })}`).join("\n")),
             }),
-            boton("PDF", {
-              variante: "secundario",
-              pequeno: true,
-              icono: "documento",
-              onClick: (e) => exportarProbabilidad(e.currentTarget, {
+            ...botonesExportar(["pdf", "xlsx", "csv"], (formato, nodo) =>
+              exportarProbabilidad(nodo, {
                 titulo: "Teorema de Bayes",
                 resumen: resultado.interpretacion,
                 tablas: [{ nombre: "Posteriores", columnas: ["Hipótesis", "Prior", "Verosimilitud", "Posterior"], filas: resultado.filas.map((f) => [f.nombre, f.prior, f.likelihood, f.posterior]) }],
                 formula: resultado.formula,
                 estado: { tipo: "bayes", hipotesis: filas.map((f) => ({ nombre: f.nombre, prior: numero(f.prior), likelihood: numero(f.likelihood) })) },
-              }),
-            }),
+              }, formato)),
           ],
           contenido: el("div", { class: "rejilla rejilla--2" }, hostGrafico, el("div", { class: "pila pila--sm" }, kpi({ etiqueta: "P(evidencia)", valor: fmtNum(resultado.total, { decimales: 6 }), detalle: "denominador de Bayes", tono: "marca" }), alerta({ tipo: "info", texto: resultado.interpretacion }))),
         }),
@@ -835,18 +824,14 @@ function herramientaVariable() {
           icono: "distribuciones",
           acciones: [
             boton("Copiar", { variante: "fantasma", pequeno: true, icono: "copiar", onClick: () => copiar(`E[X] = ${resultado.esperanza}\nVar(X) = ${resultado.varianza}`) }),
-            boton("PDF", {
-              variante: "secundario",
-              pequeno: true,
-              icono: "documento",
-              onClick: (e) => exportarProbabilidad(e.currentTarget, {
+            ...botonesExportar(["pdf", "xlsx", "csv"], (formato, nodo) =>
+              exportarProbabilidad(nodo, {
                 titulo: "Variable aleatoria discreta",
                 resumen: resultado.interpretacion,
                 tablas: [{ nombre: "Distribución", columnas: ["x", "P(X = x)"], filas: resultado.distribucion.map((d) => [d.x, d.p]) }],
                 formula: resultado.formula,
                 estado: { tipo: "variable", valores: resultado.distribucion.map((d) => d.x), masas: resultado.distribucion.map((d) => d.p) },
-              }),
-            }),
+              }, formato)),
           ],
           contenido: kpis,
         }),

@@ -18,6 +18,7 @@ import {
   iconoBoton,
   pliegue,
   anunciar,
+  botonesExportar,
 } from "../ui.js";
 import { icono } from "../icons.js";
 import { dibujar } from "../chart.js";
@@ -726,8 +727,7 @@ export async function montar(host, parametro) {
       icono: "muestreo",
       acciones: [
         boton("Copiar", { variante: "fantasma", pequeno: true, icono: "copiar", onClick: () => copiar(`${datos.resumen}\nSemilla: ${datos.semilla}`) }),
-        boton("PDF", { variante: "secundario", pequeno: true, icono: "documento", onClick: (e) => exportarMuestra(datos, "pdf", e.currentTarget) }),
-        boton("Excel", { variante: "secundario", pequeno: true, icono: "tabla", onClick: (e) => exportarMuestra(datos, "xlsx", e.currentTarget) }),
+        ...botonesExportar(["pdf", "xlsx", "png", "csv"], (formato, nodo) => exportarMuestra(datos, formato, nodo)),
       ],
       contenido: el("div", { class: "pila" }, kpis, alerta({ tipo: "info", texto: "La semilla hace reproducible la selección. Guárdala junto al informe para poder auditar el sorteo." })),
     });
