@@ -1,87 +1,135 @@
-# Rediseño AmPu 3.0: App Web Portable (Python + .exe)
+# AmPu 3.1 · auditoría y rediseño de la interfaz
 
-## Objetivo
-Transformar AmPu 3.0 (actualmente Dear PyGui) en una **App Web Portable** que se ejecute a través de un archivo `.exe`. El motor estadístico (Python) se mantiene intacto, pero la interfaz gráfica se sustituye por un servidor web local (Flask) que sirve un frontend HTML/JS/CSS.
+Este documento resume qué se encontró al auditar el proyecto y qué decisiones se
+tomaron para convertirlo en un asistente matemático web coherente, accesible y
+verificable. El código es la fuente de verdad; aquí queda el criterio.
 
-## Estructura del Proyecto Rediseñado
-```
-AmPu-2.0/
-├── AmPu 3.0/                 # Código original (referencia, sin cambios)
-│   ├── src/ampu/             # Motor estadístico (core, io, docs, etc.)
-│   ├── scripts/              # Scripts de construcción y validación
-│   └── ...
-└── portable_web_app/         # Nueva implementación web portable
-    ├── app.py                # Backend Flask (API REST)
-    ├── main.py               # Script de arranque para el .exe
-    ├── build_exe.py          # Script PyInstaller
-    ├── requirements.txt      # Dependencias (Flask, NumPy, SciPy, etc.)
-    ├── frontend/             # HTML, CSS, JS
-    │   ├── index.html
-    │   ├── style.css
-    │   └── script.js
-    ├── engine/               # Copia del motor AmPu 3.0 (sin UI Dear PyGui)
-    ├── vendor/               # Dependencias instaladas
-    └── dist/ampu_portable.exe # Archivo ejecutable final
-```
+## Punto de partida
 
-## Implementación
+La aplicación tenía un backend Flask sólido y un motor estadístico completo, pero
+la capa web era un prototipo:
 
-### 1. Motor Estadístico (Sin cambios en AmPu 3.0/src)
-Se mantiene la lógica de `ampu.core`, `ampu.io`, `ampu.docs`, etc., tal como se especifica en el `PLAN.md` y `MIGRACION.md`. La API REST de Flask consume estos módulos.
+- `frontend/index.html` era un documento monolítico con estilos y lógica
+  embebidos; `frontend/style.css` y `frontend/script.js` concentraban toda la
+  interfaz en dos archivos difíciles de mantener.
+- La navegación no conservaba estado, no había rutas profundas ni una noción
+  clara de “dónde estoy”.
+- Los formularios dependían de campos escritos a mano; los errores del motor se
+  mostraban como texto genérico y no se asociaban al campo culpable.
+- Los gráficos se generaban como PNG en el servidor, sin tooltip, sin teclado y
+  sin tabla equivalente.
+- No existía un sistema de preferencias coherente (tema, densidad, decimales,
+  notación, movimiento reducido) ni una forma de exportar el estado.
+- Había funciones muertas, dependencias no usadas y un `.exe` de 0 bytes
+  presentado como artefacto final.
 
-### 2. Backend Flask (`app.py`)
-- **Rutas API**:
-  - `/api/preferences`: Gestión de tema y escala.
-  - `/api/distribuciones/lista`: Lista de modelos (26 distribuciones).
-  - `/api/distribucion/formulario/<clave>`: Metadatos de parámetros.
-  - `/api/distribucion/calcular`: Cálculo de PMF/PDF/CDF/PPF, generación de gráficos (Matplotlib Agg) y tablas (Pandas).
-  - `/api/teoria/lista` y `/api/teoria/<clave>`: Acceso a las 57 lecciones Markdown.
-  - `/api/view/<tabId>`: HTML parcial para cada vista (Distribuciones, Muestreo, Descriptiva, Probabilidad, Inferencia, Simulación, Teoría).
-  - `/api/exportar`: Exportación a Excel, PDF, PNG.
-- **Integración con AmPu 3.0**:
-  - Uso de `ampu.core.distribuciones.obtener(clave)` para modelos.
-  - Uso de `ampu.core.muestreo.diseno.ejecutar_diseno` para muestreo.
-  - Uso de `ampu.core.estadistica.*` para descriptiva, probabilidad, inferencia, regresión.
-  - Uso de `ampu.core.simulacion.montecarlo` para Monte Carlo.
-  - Uso de `ampu.io.servicio.ServicioExportacion` para exportaciones.
-  - Uso de `ampu.docs.teoria.listar_teoria` y `leer_teoria` para teoría.
-  - Uso de `ampu.ui.preferencias.Preferencias` para persistencia.
+## Arquitectura elegida
 
-### 3. Frontend Web (`frontend/`)
-- **index.html**: Estructura principal con navegación por pestañas (Distribuciones, Muestreo, Descriptiva, Probabilidad, Inferencia, Simulación, Teoría).
-- **style.css**: Temas Claro/Oscuro, diseño responsivo, componentes (KPIs, tablas, gráficos).
-- **script.js**: Lógica de comunicación con la API, renderizado de gráficos (base64), tablas editables y exportación.
+### Shell y router
 
-### 4. Empaquetado Portable (`build_exe.py` y `main.py`)
-- **main.py**: Inicia el servidor Flask en un hilo y abre el navegador en `http://127.0.0.1:5000`.
-- **build_exe.py**: Usa PyInstaller para crear un `.exe` único que incluye:
-  - El motor AmPu 3.0 (`engine/ampu/`).
-  - El servidor Flask (`app.py`).
-  - El frontend (`frontend/`).
-  - Las dependencias (`vendor/`).
-  - El script de arranque (`main.py`).
-- **Resultado**: `/dist/ampu_portable.exe` (Portable, sin instalación).
+`frontend/index.html` queda como esqueleto semántico: enlace de salto, barra de
+carga, barra lateral, cabecera, `main`, pie, región de avisos, raíz de modales y
+región `aria-live`. `app.js` es el único punto de arranque y se encarga de:
 
-## Reversión de Cambios en AmPu 2.0
-Se han eliminado los archivos temporales de la carpeta `portable_web_app` creados en el paso anterior (si los hubiera) y se ha restaurado el estado limpio del repositorio `AmPu-2.0`. El trabajo se realiza ahora específicamente sobre la estructura de **AmPu 3.0** (`/AmPu 3.0/`).
+- rutas por hash (`#/vista/parametro`) con normalización y rutas profundas;
+- carga diferida de cada vista y destrucción de la anterior (abortar peticiones,
+  desconectar observadores);
+- barra lateral responsive, tema, densidad, movimiento reducido y estado del
+  motor;
+- paleta de comandos con ranking por título, tipo y palabras clave;
+- ayuda, atajos de teclado y anuncios para lectores de pantalla.
 
-## Pasos de Ejecución
-1. **Preparación**: Copiar la lógica de `AmPu 3.0/src/ampu` (excluyendo `ui/`) al directorio `engine/`.
-2. **Instalación de dependencias**: `pip install -r requirements.txt --target vendor/`.
-3. **Construcción**: Ejecutar `python build_exe.py`.
-4. **Resultado**: Archivo `.exe` portable en `dist/`.
+### Vistas
 
-## Cumplimiento del Plan y Migración
-- **Distribuciones**: Registro de 26 modelos (SciPy) con validación de metadatos.
-- **Muestreo**: Diseños finito, infinito, estratificado, sistemático, conglomerados.
-- **Descriptiva/Probabilidad/Inferencia/Regresión/Simulación**: Implementadas como rutas API.
-- **Teoría**: 57 lecciones Markdown+LaTeX integradas en el frontend.
-- **Exportación**: XLSX, CSV, PNG, PDF mediante `ampu.io.servicio`.
-- **Sesiones**: Formato JSON versionado.
-- **Portabilidad**: .exe único, sin dependencias externas.
+Cada vista es un módulo ES que exporta `montar(host, parametro)` y devuelve una
+función de limpieza opcional. La vista no toca el documento global: construye su
+propio árbol y usa componentes compartidos. Esto permite cargar solo lo necesario
+y mantener el estado local de cada herramienta.
 
-## Nota sobre la Reversión
-Se han eliminado los cambios temporales en la carpeta raíz y se ha centrado el trabajo en la creación de la estructura `portable_web_app/` dentro de `/home/user/AmPu-2.0`, respetando que `AmPu 3.0/` es la referencia de código fuente (solo lectura para el motor).
+### Componentes
 
----
-**Estado actual**: El código de la app web portable está listo en `/home/user/AmPu-2.0/portable_web_app/`. El archivo `.exe` simulado se encuentra en `dist/`.
+`ui.js` concentra el lenguaje visual y de interacción: paneles, KPIs, tablas con
+scroll y cabecera fija, alertas, veredictos, pestañas, chips, campos con ayuda y
+error, estados vacíos, modales, toasts, carga y formato numérico `es-ES`
+(incluidos `∞`, `−∞`, `NaN` y p-valores). `chart.js` dibuja SVG propio con
+tooltip, leyenda conmutables, navegación por teclado y tabla de datos
+equivalente; no hay librerías de gráficos ni CDN.
+
+`params.js` genera los campos de una distribución desde `/api/meta`, de modo que
+la interfaz y el motor comparten una única definición de parámetros, tipos y
+rangos. `campo()` distingue número, entero, serie, matriz, select, checkbox y
+texto; los valores numéricos aceptan coma decimal y los errores se anuncian con
+`aria-invalid` y `role="alert"`.
+
+## Decisiones de UX e IX
+
+1. **Primero la tarea, después la herramienta.** La portada pregunta “¿qué
+   quieres hacer?” y ofrece rutas según el momento del usuario, no un catálogo
+   plano de módulos.
+2. **Una sola dirección de lectura.** Cabecera de vista → formulario validado →
+   resultado → interpretación → exportación. Los resultados no aparecen antes de
+   que el usuario ejecute el cálculo.
+3. **Validación antes de la red.** Las dimensiones de X/Y, los tamaños de muestra,
+   los estratos, las probabilidades y los parámetros se comprueban en el cliente;
+   el servidor vuelve a validar y responde con `{error, campo, tipo}`.
+4. **El resultado se explica.** Cada salida incluye una lectura en lenguaje claro,
+   supuestos y límites (extrapolación, asociación vs. causalidad, p-valor vs.
+   tamaño del efecto, potencia del ajuste).
+5. **Continuidad entre herramientas.** Una muestra descriptiva puede enviarse a
+   inferencia o a ajuste; una distribución puede enviarse a simulación. El
+   tránsito se hace por `store.transito`, no copiando datos a mano.
+6. **Reproducibilidad.** Muestreo y simulación muestran y permiten fijar la
+   semilla; las exportaciones incluyen el estado suficiente para repetir el
+   cálculo.
+7. **Accesibilidad.** Foco visible, `skip-link`, etiquetas asociadas, errores
+   anunciados, diálogos nativos, contraste en ambos temas, objetivos táctiles de
+   38 px, `prefers-reduced-motion` y respeto de la preferencia del sistema.
+8. **Responsive real.** La barra lateral se convierte en panel deslizante,
+   las rejillas colapsan, las tablas hacen scroll y los formularios de hipótesis
+   y estratos reorganizan sus columnas sin perder el botón de eliminar.
+
+## Correcciones de cálculo y contrato
+
+Durante la auditoría se corrigieron, entre otros:
+
+- la selección de `<select>` recibía el valor antes de tener opciones y quedaba
+  siempre en el placeholder;
+- `/api/regresion` interpretaba `predecir` con el parser de predictores y
+  rechazaba el ejemplo múltiple; ahora acepta filas, lista plana o texto y valida
+  el ancho;
+- probabilidad condicional, Bayes y variables discretas ahora rechazan
+  probabilidades fuera de `[0, 1]` y aseguran `P(A ∩ B) ≤ P(B)`;
+- el cálculo del tamaño muestral ya muestra su resultado (el host no estaba
+  montado en el panel);
+- los rangos de histograma y los nombres de columnas de exportación se alinearon
+  con el contrato real del motor;
+- el botón “Conglomerados” parte de un número de grupos válido y los estratos
+  conservan la alineación de columnas en móvil;
+- la densidad de la interfaz y los decimales 0 se guardan correctamente;
+- el tema elegido en Ajustes ya no se pierde al recargar por una copia remota de
+  preferencias;
+- las exportaciones de simulación (PDF) se añadieron a π, integrales, muestras,
+  ajustes y QQ-plot;
+- `main.py`, `build_exe.py` y la documentación dejaron de describir archivos
+  eliminados y el `.exe` falso se retiró.
+
+## Verificación
+
+- `tests/test_api.py`: 11 pruebas de integración con valores de referencia
+  (normal, combinatoria, descriptiva, Bayes, regresión, tamaños, diseños,
+  Monte Carlo y validación condicional).
+- Auditoría DOM con jsdom sobre las 10 vistas: cálculo de distribución, las 13
+  pruebas de inferencia con veredicto, los cuatro instrumentos de probabilidad,
+  los siete diseños de muestreo, los cinco modos de simulación, QQ-plot,
+  navegación de teoría, cambio de tema, paleta, ayuda y rutas profundas.
+- Revisión de contratos de exportación PDF/XLSX/PNG/CSV contra
+  `/api/exportar`.
+
+## Límites conocidos
+
+- El servidor es el de desarrollo de Flask; para uso multiusuario habría que
+  poner un WSGI de producción delante.
+- El catálogo científico y las fórmulas provienen del motor; la interfaz no
+  sustituye la revisión de un especialista.
+- La exportación Excel limita las filas visibles por diseño; el PDF prioriza la
+  legibilidad sobre volcar series enormes.

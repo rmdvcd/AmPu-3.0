@@ -1,54 +1,71 @@
-"""Script de arranque para el .exe portable AmPu 3.0.
+"""Arranque de AmPu 3.1 en escritorio.
 
-Este script se ejecuta cuando el usuario abre el .exe.
-Inicia el servidor Flask y abre el navegador.
+Inicia el servidor Flask local y abre el navegador cuando la aplicación ya
+responde. Se puede usar tanto desde el código fuente como desde el ejecutable
+generado con ``build_exe.py``.
+
+Variables de entorno:
+    AMPU_HOST   interfaz de escucha (por defecto 127.0.0.1)
+    PORT        puerto (por defecto 5000)
+    AMPU_NO_BROWSER=1  no abre el navegador automáticamente
 """
 
-import sys
+from __future__ import annotations
+
 import os
-import subprocess
-import time
-import webbrowser
+import sys
 import threading
+import time
+import urllib.error
+import urllib.request
+import webbrowser
 from pathlib import Path
 
-# Configurar PYTHONPATH para incluir el motor AmPu 3.0 y las dependencias vendidas
-if hasattr(sys, "_MEIPASS"):
-    # Modo .exe
-    vendor_path = os.path.join(sys._MEIPASS, "vendor")
-    ampu_src = os.path.join(sys._MEIPASS, "engine")
-else:
-    # Modo desarrollo
-    base_dir = Path(__file__).parent
-    vendor_path = str(base_dir / "vendor")
-    ampu_src = str(base_dir / "engine")
-    # También añadir la ruta original del repositorio AmPu 3.0 para pruebas
-    sys.path.insert(0, str(base_dir.parent / "AmPu 3.0" / "src"))
+BASE_DIR = Path(__file__).resolve().parent
+MEIPASS = Path(getattr(sys, "_MEIPASS", BASE_DIR))
 
-sys.path.insert(0, vendor_path)
-sys.path.insert(0, ampu_src)
+# En el ejecutable, PyInstaller coloca el motor y las dependencias en _MEIPASS;
+# en desarrollo viven junto a main.py. El orden importa: primero lo empaquetado.
+for ruta in (MEIPASS / "vendor", MEIPASS / "engine", BASE_DIR / "vendor", BASE_DIR / "engine"):
+    if ruta.exists() and str(ruta) not in sys.path:
+        sys.path.insert(0, str(ruta))
 
-# Importar Flask y la app
-import app as ampu_app
+import app as ampu_app  # noqa: E402
 
-def iniciar_servidor():
-    """Inicia el servidor Flask en un hilo separado."""
-    port = 5000
-    ampu_app.app.run(host='127.0.0.1', port=port, debug=False, use_reloader=False)
 
-def abrir_navegador(port):
-    """Abre el navegador en la URL del servidor."""
-    time.sleep(2)  # Esperar a que el servidor inicie
-    url = f"http://127.0.0.1:{port}"
-    webbrowser.open(url)
+def _esperar_servidor(url: str, intentos: int = 60) -> bool:
+    for _ in range(intentos):
+        try:
+            with urllib.request.urlopen(f"{url}/api/salud", timeout=0.8) as respuesta:
+                if respuesta.status == 200:
+                    return True
+        except (urllib.error.URLError, TimeoutError, OSError):
+            time.sleep(0.25)
+    return False
+
+
+def main() -> None:
+    host = os.environ.get("AMPU_HOST", "127.0.0.1")
+    puerto = int(os.environ.get("PORT", "5000"))
+    url = f"http://{'127.0.0.1' if host in ('0.0.0.0', '::') else host}:{puerto}"
+
+    hilo = threading.Thread(
+        target=lambda: ampu_app.app.run(host=host, port=puerto, debug=False, use_reloader=False, threaded=True),
+        daemon=True,
+    )
+    hilo.start()
+
+    if os.environ.get("AMPU_NO_BROWSER") != "1" and _esperar_servidor(url):
+        webbrowser.open(url)
+
+    print(f"AmPu 3.1 disponible en {url}")
+    print("Pulsa Ctrl+C para cerrar.")
+    try:
+        while hilo.is_alive():
+            time.sleep(0.5)
+    except KeyboardInterrupt:
+        print("\nCerrando AmPu 3.1…")
+
 
 if __name__ == "__main__":
-    port = 5000
-    server_thread = threading.Thread(target=iniciar_servidor, daemon=True)
-    server_thread.start()
-    abrir_navegador(port)
-    try:
-        while True:
-            time.sleep(1)
-    except KeyboardInterrupt:
-        print("Cerrando AmPu 3.0 Portable...")
+    main()

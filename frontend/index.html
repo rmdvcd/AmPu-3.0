@@ -1,50 +1,132 @@
 <!DOCTYPE html>
-<html lang="es">
+<html lang="es" data-tema="claro">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AmPu 3.0 - Laboratorio de Probabilidad y Estadística (Portable)</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
-    <!-- KaTeX para fórmulas -->
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/katex.min.css">
-    <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/katex.min.js"></script>
-    <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/contrib/auto-render.min.js"
-           onload="renderMathInElement(document.body);"></script>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="AmPu 3.1: laboratorio local de probabilidad y estadística. Distribuciones, descriptiva, inferencia, regresión, muestreo y simulación, sin conexión.">
+  <meta name="color-scheme" content="light dark">
+  <meta name="theme-color" content="#0d3b3a">
+  <title>AmPu · Laboratorio de probabilidad y estadística</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/vendor/katex/katex.min.css">
+  <link rel="stylesheet" href="/static/css/app.css">
+  <script>
+    // Evita el destello de tema al cargar: resuelve la preferencia antes del primer pintado.
+    (function () {
+      try {
+        var guardado = JSON.parse(localStorage.getItem('ampu.prefs.v1') || '{}');
+        var tema = guardado.tema || 'sistema';
+        var oscuro = tema === 'oscuro' || (tema === 'sistema' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+        document.documentElement.dataset.tema = oscuro ? 'oscuro' : 'claro';
+        if (guardado.densidad === 'compacta') document.documentElement.dataset.densidad = 'compacta';
+      } catch (e) { /* preferencias corruptas: se usarán los valores por defecto */ }
+    })();
+  </script>
+  <script defer src="/vendor/katex/katex.min.js"></script>
+  <script defer src="/vendor/katex/auto-render.min.js"></script>
 </head>
 <body>
-    <nav class="navbar">
-        <div class="logo">AmPu 3.0 Portable</div>
-        <div class="nav-links">
-            <a href="#" onclick="showTab('distribuciones')">Distribuciones</a>
-            <a href="#" onclick="showTab('muestreo')">Muestreo</a>
-            <a href="#" onclick="showTab('descriptiva')">Descriptiva</a>
-            <a href="#" onclick="showTab('probabilidad')">Probabilidad</a>
-            <a href="#" onclick="showTab('inferencia')">Inferencia</a>
-            <a href="#" onclick="showTab('simulacion')">Simulación</a>
-            <a href="#" onclick="showTab('teoria')">Teoría</a>
-        </div>
-        <div class="theme-toggle">
-            <button id="themeBtn" onclick="toggleTheme()">Tema: Claro</button>
-        </div>
-    </nav>
+  <a class="skip-link" href="#contenido">Saltar al contenido principal</a>
 
-    <main class="container">
-        <div id="tab-content" class="tab-content">
-            <!-- Contenido dinámico cargado por JS -->
-        </div>
-    </main>
+  <div class="barra-carga" id="barra-carga" aria-hidden="true"><span></span></div>
 
-    <div id="loading" class="loading-overlay" style="display: none;">
-        <div class="spinner"></div>
-        <p>Calculando...</p>
+  <div class="aplicacion" id="aplicacion">
+    <div class="velo-sidebar" id="velo-sidebar" hidden></div>
+
+    <aside class="sidebar" id="sidebar" aria-label="Navegación principal">
+      <div class="sidebar__marca">
+        <a class="marca" href="#/inicio" aria-label="AmPu, ir al inicio">
+          <span class="marca__simbolo" aria-hidden="true">
+            <svg viewBox="0 0 32 32" width="30" height="30"><path d="M7 8.5h18M7 23.5h18M9.2 8.5 23 23.5M23 8.5 9.2 23.5" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg>
+          </span>
+          <span class="marca__texto">
+            <strong>AmPu</strong>
+            <small>Probabilidad &amp; estadística</small>
+          </span>
+        </a>
+        <button class="icono-boton sidebar__cerrar" id="cerrar-sidebar" aria-label="Cerrar menú">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg>
+        </button>
+      </div>
+
+      <nav class="sidebar__nav" id="nav-principal"></nav>
+
+      <div class="sidebar__pie">
+        <div class="estado-motor" id="estado-motor" role="status">
+          <span class="punto" aria-hidden="true"></span>
+          <span class="estado-motor__texto">Comprobando motor…</span>
+        </div>
+        <button class="sidebar__enlace" id="abrir-preferencias" type="button">
+          <span data-icono="ajustes" aria-hidden="true"></span> Preferencias
+        </button>
+        <button class="sidebar__enlace" id="abrir-ayuda" type="button">
+          <span data-icono="ayuda" aria-hidden="true"></span> Atajos y ayuda
+        </button>
+        <p class="sidebar__version">v3.1 · local y sin conexión</p>
+      </div>
+    </aside>
+
+    <div class="principal">
+      <header class="barra-superior">
+        <div class="barra-superior__izq">
+          <button class="icono-boton" id="alternar-sidebar" aria-label="Mostrar u ocultar el menú" aria-expanded="true" aria-controls="sidebar">
+            <svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
+          </button>
+          <nav class="migas" id="migas" aria-label="Ubicación">
+            <a href="#/inicio">AmPu</a>
+            <span aria-hidden="true">/</span>
+            <span id="miga-actual">Inicio</span>
+          </nav>
+        </div>
+        <div class="barra-superior__der">
+          <button class="buscador-disparo" id="abrir-buscador" aria-label="Buscar herramientas, modelos y lecciones">
+            <span data-icono="buscar" aria-hidden="true"></span>
+            <span class="buscador-disparo__texto">Buscar…</span>
+            <kbd class="kbd" data-atajo="buscar">Ctrl K</kbd>
+          </button>
+          <button class="icono-boton" id="alternar-tema" aria-label="Cambiar tema" title="Cambiar tema">
+            <span class="icono-tema" id="icono-tema" aria-hidden="true"></span>
+          </button>
+          <button class="icono-boton" id="boton-ayuda" aria-label="Abrir ayuda" title="Atajos y ayuda">
+            <span data-icono="ayuda" aria-hidden="true"></span>
+          </button>
+        </div>
+      </header>
+
+      <main class="contenido" id="contenido" tabindex="-1">
+        <div class="esqueleto-vista" aria-hidden="true">
+          <div class="esqueleto esqueleto--titulo"></div>
+          <div class="esqueleto esqueleto--texto"></div>
+          <div class="rejilla rejilla--2">
+            <div class="esqueleto esqueleto--panel"></div>
+            <div class="esqueleto esqueleto--panel"></div>
+          </div>
+        </div>
+      </main>
+
+      <footer class="pie">
+        <span>AmPu 3.1 · motor NumPy/SciPy local</span>
+        <span class="pie__separador" aria-hidden="true">·</span>
+        <span>Los cálculos no salen de tu equipo</span>
+        <span class="pie__der">
+          <button class="enlace-boton" id="pie-ayuda" type="button">Cómo funciona</button>
+          <button class="enlace-boton" id="pie-preferencias" type="button">Preferencias</button>
+        </span>
+      </footer>
     </div>
+  </div>
 
-    <script src="{{ url_for('static', filename='script.js') }}"></script>
-    <script>
-        document.addEventListener('DOMContentLoaded', () => {
-            loadTab('distribuciones');
-            loadPreferences();
-        });
-    </script>
+  <div id="avisos" class="avisos" role="status" aria-live="polite" aria-atomic="false"></div>
+  <div id="raiz-modal"></div>
+  <div id="anuncio" class="sr-only" aria-live="polite"></div>
+
+  <noscript>
+    <div class="sin-js">
+      <h1>AmPu necesita JavaScript</h1>
+      <p>Activa JavaScript en tu navegador para usar el laboratorio. Todos los cálculos se ejecutan en tu equipo.</p>
+    </div>
+  </noscript>
+
+  <script type="module" src="/static/js/app.js"></script>
 </body>
 </html>
