@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# Entorno local
+.ampu_data/
+*.log
+*.tmp
+
+# Artefactos de compilación
+build_temp/
+build/
+dist/*.exe
+dist/ampu_portable_3_0
+*.spec
+
+# Pruebas y cobertura
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Sistema
+.DS_Store
+Thumbs.db
