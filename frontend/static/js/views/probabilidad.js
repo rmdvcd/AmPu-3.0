@@ -898,10 +898,17 @@ export async function montar(host, parametro) {
     }
   }
 
+  /* Los gráficos registran un ResizeObserver: hay que desconectarlo al cambiar
+     de herramienta o al abandonar la vista para no retener nodos fuera del DOM. */
+  function desconectarGraficos() {
+    contenido.querySelectorAll(".grafico").forEach((nodo) => nodo._observadorGrafico?.disconnect());
+  }
+
   function seleccionar(clave) {
     activa = clave;
     history.replaceState(null, "", `#/probabilidad/${clave}`);
     renderHerramientas();
+    desconectarGraficos();
     contenido.replaceChildren(constructores[clave]());
     anunciar(`Herramienta ${clave} seleccionada.`);
   }
@@ -942,4 +949,6 @@ export async function montar(host, parametro) {
 
   renderHerramientas();
   contenido.append(constructores[activa]());
+
+  return () => desconectarGraficos();
 }

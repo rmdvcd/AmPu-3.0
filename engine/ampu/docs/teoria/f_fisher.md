@@ -2,7 +2,7 @@
 
 ## Definición formal
 
-Cociente de dos chi-cuadrados independientes normalizados por sus grados de libertad $d_1,d_2$. En AmPu 3.0 se parametriza exactamente como en `scipy.stats`;
+Cociente de dos chi-cuadrados independientes normalizados por sus grados de libertad $d_1,d_2$. En AmPu 3.1 se parametriza exactamente como en `scipy.stats`;
 los eventos fuera del soporte reciben masa/densidad 0.
 
 ## Parámetros y rango

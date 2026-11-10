@@ -19,7 +19,9 @@ por una arquitectura modular:
 - **26 distribuciones**, **13 pruebas de hipótesis**, **7 diseños de muestreo**,
   **5 experimentos de simulación** y **57 lecciones** con fórmulas KaTeX e
   imágenes servidas localmente.
-- **Exportación** a PDF, Excel, PNG y CSV desde los resultados.
+- **Exportación** a PDF y Excel en todas las herramientas, más PNG y CSV cuando
+  el resultado incluye gráfico o tabla (distribuciones ofrece los cuatro
+  formatos; la API acepta `pdf`, `xlsx`, `png` y `csv`).
 - **Diseño responsivo** y componentes reutilizables: paneles, KPIs, tablas con
   scroll, alertas, veredictos, pestañas, chips, formularios con validación y
   estados vacíos.

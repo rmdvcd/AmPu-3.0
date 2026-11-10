@@ -812,6 +812,12 @@ export async function montar(host, parametro) {
     qq: () => herramientaQQ(pendiente, metaDatos),
   };
 
+  /* Los gráficos de simulación viven dentro de «contenido» y registran un
+     ResizeObserver; se desconecta al cambiar de herramienta o de vista. */
+  function desconectarGraficos() {
+    contenido.querySelectorAll(".grafico").forEach((nodo) => nodo._observadorGrafico?.disconnect());
+  }
+
   function renderSelector() {
     selector.replaceChildren();
     for (const h of HERRAMIENTAS) {
@@ -826,6 +832,7 @@ export async function montar(host, parametro) {
               activa = h.clave;
               history.replaceState(null, "", `#/simulacion/${h.clave}`);
               renderSelector();
+              desconectarGraficos();
               contenido.replaceChildren(constructores[h.clave]().nodo);
               anunciar(`Herramienta ${h.nombre} seleccionada.`);
             },
@@ -871,4 +878,6 @@ export async function montar(host, parametro) {
   renderSelector();
   contenido.append(constructores[activa]().nodo);
   pendiente = null;
+
+  return () => desconectarGraficos();
 }

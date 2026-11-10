@@ -207,7 +207,4 @@ export async function montar(host) {
     if (modelo?.formula) latex(nodo, modelo.formula, { display: true });
     else nodo.textContent = "";
   });
-
-  // Iconos de los enlaces recién creados (el shell hidrata los suyos al arrancar).
-  host.querySelectorAll(".distribucion-mini__flecha svg, .ruta-card__accion svg").forEach(() => {});
 }

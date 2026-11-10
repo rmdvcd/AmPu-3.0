@@ -2,7 +2,7 @@
 
 ## Definición formal
 
-Par $(X,Y)$ normal con medias, desviaciones y correlación $\rho$; $|\rho|<1$. En AmPu 3.0 se parametriza exactamente como en `scipy.stats`;
+Par $(X,Y)$ normal con medias, desviaciones y correlación $\rho$; $|\rho|<1$. En AmPu 3.1 se parametriza exactamente como en `scipy.stats`;
 los eventos fuera del soporte reciben masa/densidad 0.
 
 ## Parámetros y rango

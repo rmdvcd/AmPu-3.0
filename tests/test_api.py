@@ -1,4 +1,4 @@
-"""Pruebas de integración de la API de AmPu 3.0.
+"""Pruebas de integración de la API de AmPu 3.1.
 
 Se ejecutan con el propio intérprete de Python, sin dependencias de test
 adicionales:

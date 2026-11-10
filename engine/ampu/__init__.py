@@ -1,3 +1,3 @@
-"""AmPu 3.0: laboratorio multiplataforma de estadística y probabilidad."""
+"""AmPu 3.1: motor numérico de estadística y probabilidad."""
 
-__version__ = "3.0.0"
+__version__ = "3.1.0"

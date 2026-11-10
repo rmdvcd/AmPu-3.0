@@ -2,7 +2,7 @@
 
 ## Definición formal
 
-Un único ensayo binario: $X=1$ si hay éxito y $X=0$ si hay fracaso. En AmPu 3.0 se parametriza exactamente como en `scipy.stats`;
+Un único ensayo binario: $X=1$ si hay éxito y $X=0$ si hay fracaso. En AmPu 3.1 se parametriza exactamente como en `scipy.stats`;
 los eventos fuera del soporte reciben masa/densidad 0.
 
 ## Parámetros y rango

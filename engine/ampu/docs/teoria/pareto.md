@@ -2,7 +2,7 @@
 
 ## Definición formal
 
-Modelo de cola de potencia para valores superiores a un mínimo $x_m$. En AmPu 3.0 se parametriza exactamente como en `scipy.stats`;
+Modelo de cola de potencia para valores superiores a un mínimo $x_m$. En AmPu 3.1 se parametriza exactamente como en `scipy.stats`;
 los eventos fuera del soporte reciben masa/densidad 0.
 
 ## Parámetros y rango
