@@ -12,11 +12,16 @@ import {
   conCarga,
   fmtNum,
   fmtPorcentaje,
+  fmtIntervalo,
+  errorEnCampo,
+  textoError,
+  avisosMotor,
   segmentado,
   anunciar,
   pliegue,
   botonesExportar,
 } from "../ui.js";
+import { fmtEntrada, leerNumero } from "../entrada.js";
 import { icono } from "../icons.js";
 import { dibujar, graficoCaja, calcularHistograma, calcularECDF } from "../chart.js";
 import {
@@ -27,56 +32,13 @@ import {
 } from "../store.js";
 import { api, esCancelacion } from "../api.js";
 
-function parsearDatos(texto, { separador = "auto", comaDecimal = false } = {}) {
-  const limpio = String(texto || "").trim();
-  if (!limpio) return { valores: [], invalidos: [], crudos: [] };
-  if (limpio.startsWith("[")) {
-    try {
-      const lista = JSON.parse(limpio);
-      if (!Array.isArray(lista)) return { valores: [], invalidos: [limpio.slice(0, 30)], crudos: [] };
-      const valores = lista.map((v) => Number(v));
-      return {
-        valores: valores.filter((v) => Number.isFinite(v)),
-        invalidos: lista.filter((v, i) => !Number.isFinite(valores[i])).slice(0, 4),
-        crudos: lista,
-      };
-    } catch {
-      /* continúa con el análisis de texto */
-    }
-  }
+/** Texto para el campo a partir de números: coma decimal y un valor por posición. */
+const textoSerie = (valores, separador = " ") => valores.map((v) => fmtEntrada(v)).join(separador);
 
-  let normalizado = limpio;
-  let patron;
-  const tieneLineas = /[\n;]/.test(limpio);
-  if (separador === "lineas") patron = /[\n;]+/;
-  else if (separador === "comas") patron = /[\s,;]+/;
-  else if (separador === "puntoycoma") patron = /[\n;]+/;
-  else if (separador === "espacios") patron = /\s+/;
-  else {
-    // Auto: si hay líneas o punto y coma, la coma puede ser decimal; si no, es separador.
-    if (tieneLineas || /\t/.test(limpio)) {
-      patron = /[\s;]+/;
-      normalizado = normalizado.replace(/,/g, ".");
-    } else if (/\s/.test(limpio.trim()) && /,/.test(limpio)) {
-      // Coma entre dígitos = decimal; coma junto a espacio = separador.
-      normalizado = normalizado.replace(/(\d),(\d)/g, "$1.$2");
-      patron = /[\s,;]+/;
-    } else {
-      patron = /[\s,;]+/;
-    }
-  }
-  if (comaDecimal && separador !== "comas") {
-    normalizado = normalizado.replace(/,/g, ".");
-  }
-  const crudos = normalizado.split(patron).map((v) => v.trim()).filter(Boolean);
-  const valores = [];
-  const invalidos = [];
-  for (const crudo of crudos) {
-    const numero = Number(crudo.replace(",", "."));
-    if (Number.isFinite(numero)) valores.push(numero);
-    else invalidos.push(crudo);
-  }
-  return { valores, invalidos: invalidos.slice(0, 5), crudos };
+/** Número de una celda de CSV, con la misma gramática que el resto de AmPu. */
+function numeroCelda(celda) {
+  const lectura = leerNumero(celda);
+  return lectura.error ? NaN : lectura.valor;
 }
 
 function parsearCSV(texto) {
@@ -114,23 +76,32 @@ function parsearCSV(texto) {
   if (filas.length < 2) return null;
   const ancho = Math.max(...filas.map((f) => f.length));
   const cabecera = filas[0];
-  const primeraNumerica = cabecera.every((c) => c === "" || Number.isFinite(Number(c.replace(",", "."))));
+  const primeraNumerica = cabecera.every((c) => c === "" || Number.isFinite(numeroCelda(c)));
   const nombres = primeraNumerica ? cabecera.map((_, i) => `Columna ${i + 1}`) : cabecera.map((c, i) => c || `Columna ${i + 1}`);
   const cuerpo = primeraNumerica ? filas : filas.slice(1);
   const columnas = [];
   for (let i = 0; i < ancho; i++) {
     const valoresCrudos = cuerpo.map((f) => (f[i] ?? "").trim());
     const validos = valoresCrudos.filter(Boolean);
-    const numeros = validos.map((v) => Number(v.replace(",", ".")));
+    const numeros = validos.map(numeroCelda);
     const nValidos = numeros.filter(Number.isFinite).length;
     if (!validos.length || nValidos / validos.length < 0.7) continue;
     columnas.push({
       nombre: nombres[i] || `Columna ${i + 1}`,
       valores: numeros.filter(Number.isFinite),
       faltantes: valoresCrudos.filter((v) => !v).length,
+      // Celdas con texto que no es un número: se omiten, pero se dice cuántas y cuáles.
+      descartadas: validos.filter((_, j) => !Number.isFinite(numeros[j])),
     });
   }
   return { columnas, filas: cuerpo.length, delimitador };
+}
+
+function textoModas(r) {
+  const modas = r.modas || [];
+  if (!modas.length) return "Sin moda (ningún valor se repite)";
+  const extra = (r.n_modas ?? modas.length) - modas.length;
+  return modas.map((m) => fmtNum(m)).join(" · ") + (extra > 0 ? ` · (+${extra} más)` : "");
 }
 
 function configTablaResumen(resultado) {
@@ -140,7 +111,7 @@ function configTablaResumen(resultado) {
     ["Suma", r.suma],
     ["Media", r.media],
     ["Mediana", r.mediana],
-    ["Moda(s)", (r.modas || []).map((m) => fmtNum(m)).join(", ") || "—"],
+    ["Moda(s)", textoModas(r)],
     ["Mínimo", r.minimo],
     ["Máximo", r.maximo],
     ["Rango", r.rango],
@@ -151,10 +122,10 @@ function configTablaResumen(resultado) {
     ["Desviación estándar", r.desviacion],
     ["Coeficiente de variación", r.cv !== null && r.cv !== undefined ? fmtPorcentaje(r.cv, 1) : "—"],
     ["Error estándar de la media", r.error_estandar],
-    ["IC 95 % para la media", `[${fmtNum(r.ic_media[0])}, ${fmtNum(r.ic_media[1])}]`],
+    [`IC ${fmtPorcentaje(r.ic_nivel ?? 0.95, 0)} para la media`, fmtIntervalo(r.ic_media)],
     ["Asimetría (sesgo)", r.sesgo],
     ["Curtosis (exceso)", r.curtosis],
-    ["Valores atípicos (1,5 · IQR)", resultado.atipicos?.length ?? 0],
+    ["Valores atípicos (1,5 · IQR)", resultado.n_atipicos ?? resultado.atipicos?.length ?? 0],
   ];
   return {
     columnas: ["Estadístico", "Valor"],
@@ -176,8 +147,9 @@ export async function montar(host) {
     tipo: "serie",
     valor: "",
     filas: 9,
-    ayuda: "Separa con espacios, comas o saltos de línea. También puedes pegar una lista JSON.",
-    placeholder: "12, 14, 13, 12, 15, 18, 11, 40…",
+    nombre: "datos",
+    ayuda: "Pega una columna de una hoja de cálculo o escribe los valores seguidos.",
+    placeholder: "12,5 14 13,2 12 15 18 11 40",
     onInput: () => {
       actualizarContador();
       if (resultado) marcarDesactualizado();
@@ -192,37 +164,9 @@ export async function montar(host) {
     el(
       "div",
       { class: "fila fila--entre" },
-      el("span", { class: "texto-tenue texto-pequeno" }, "Los valores se validan antes de enviarlos al motor."),
+      el("span", { class: "texto-tenue texto-pequeno" }, "Bajo el cuadro ves cómo se han leído tus datos antes de calcular."),
       contador
     ),
-    pliegue({
-      titulo: "Opciones de importación",
-      icono: "ajustes",
-      contenido: el(
-        "div",
-        { class: "columnas-formulario" },
-        campo({
-          etiqueta: "Separador",
-          tipo: "select",
-          id: "sep-datos",
-          valor: "auto",
-          opciones: [
-            ["auto", "Detectar automáticamente"],
-            ["lineas", "Líneas o punto y coma"],
-            ["comas", "Comas"],
-            ["espacios", "Espacios"],
-            ["puntoycoma", "Punto y coma"],
-          ],
-        }).envoltura,
-        campo({
-          etiqueta: "Coma decimal",
-          tipo: "checkbox",
-          id: "coma-decimal",
-          valor: false,
-          ayuda: "Marca esta opción si escribes 3,14 en lugar de 3.14.",
-        }).envoltura
-      ),
-    })
   );
 
   const nombreArchivo = el("span", { class: "chip" }, "Ningún archivo");
@@ -235,8 +179,9 @@ export async function montar(host) {
     onCambio: (valor) => {
       const col = columnasArchivo.find((c) => c.nombre === valor);
       if (col) {
-        campoDatos.setValor(col.valores.join("\n"));
+        campoDatos.setValor(textoSerie(col.valores, "\n"));
         actualizarContador();
+        avisarDescartes(col);
         toast(`Columna «${col.nombre}» cargada con ${col.valores.length} valores`, { tipo: "ok" });
       }
     },
@@ -286,7 +231,7 @@ export async function montar(host) {
       icono: "descargar",
       onClick: () => {
         if (!ejemplo) return;
-        campoDatos.setValor(ejemplo.datos.join(", "));
+        campoDatos.setValor(textoSerie(ejemplo.datos));
         actualizarContador();
         fijarPestana("pegar");
         toast("Ejemplo cargado", { tipo: "ok" });
@@ -407,19 +352,21 @@ export async function montar(host) {
   function actualizarContador() {
     clearTimeout(temporizadorContador);
     temporizadorContador = setTimeout(() => {
-      const opciones = leerOpciones();
-      const { valores, invalidos } = parsearDatos(campoDatos.texto(), opciones);
-      contador.textContent = `${valores.length} ${valores.length === 1 ? "valor" : "valores"}`;
-      contador.className = invalidos.length ? "chip chip--aviso" : valores.length ? "chip chip--marca" : "chip";
-      contador.title = invalidos.length ? `Valores no numéricos: ${invalidos.join(", ")}` : "";
+      const lectura = campoDatos.lectura();
+      const n = lectura.valores.length;
+      contador.textContent = lectura.error ? "Entrada sin leer" : `${n} ${n === 1 ? "valor" : "valores"}`;
+      contador.className = lectura.error || lectura.avisos.length ? "chip chip--aviso" : n ? "chip chip--marca" : "chip";
+      contador.title = lectura.error ? lectura.error.mensaje : lectura.avisos.join(" ");
     }, 120);
   }
 
-  function leerOpciones() {
-    return {
-      separador: document.getElementById("sep-datos")?.value || "auto",
-      comaDecimal: Boolean(document.getElementById("coma-decimal")?.checked),
-    };
+  /** Dice cuántas celdas no numéricas de la columna se han omitido (nunca en silencio). */
+  function avisarDescartes(col) {
+    const n = col.descartadas?.length || 0;
+    if (!n) return;
+    const muestra = col.descartadas.slice(0, 3).map((v) => `«${v}»`).join(", ");
+    informacionArchivo.textContent = `Columna «${col.nombre}»: se omitieron ${n} celda${n === 1 ? "" : "s"} que no son números (${muestra}${n > 3 ? "…" : ""}).`;
+    toast(`Se omitieron ${n} celda${n === 1 ? "" : "s"} no numérica${n === 1 ? "" : "s"}`, { tipo: "aviso" });
   }
 
   entradaArchivo.addEventListener("change", async () => {
@@ -448,13 +395,14 @@ export async function montar(host) {
       );
       if (datos.columnas.length === 1) {
         selectorColumna.setValor(datos.columnas[0].nombre);
-        campoDatos.setValor(datos.columnas[0].valores.join("\n"));
+        campoDatos.setValor(textoSerie(datos.columnas[0].valores, "\n"));
         informacionArchivo.textContent = `Se usó la única columna numérica. ${datos.filas} filas leídas.`;
       } else {
         informacionArchivo.textContent = `Se detectaron ${datos.columnas.length} columnas numéricas. Elige una para analizar.`;
-        campoDatos.setValor(datos.columnas[0].valores.join("\n"));
+        campoDatos.setValor(textoSerie(datos.columnas[0].valores, "\n"));
         selectorColumna.setValor(datos.columnas[0].nombre);
       }
+      avisarDescartes(datos.columnas[0]);
       actualizarContador();
       toast("Archivo leído correctamente", { tipo: "ok" });
     } catch (error) {
@@ -489,17 +437,34 @@ export async function montar(host) {
   }
 
   async function analizar() {
-    const opciones = leerOpciones();
-    const { valores, invalidos } = parsearDatos(campoDatos.texto(), opciones);
-    if (invalidos.length) {
-      alertaError(`Hay valores que no son números: ${invalidos.join(", ")}. Corrige el texto o cambia el separador.`);
+    campoDatos.limpiarError();
+    // Una lista JSON pegada ([1, 2.5, 3]) se convierte a la notación del campo, a la vista.
+    const crudo = campoDatos.texto();
+    if (crudo.startsWith("[")) {
+      try {
+        const lista = JSON.parse(crudo);
+        if (Array.isArray(lista) && lista.every((v) => typeof v === "number" && Number.isFinite(v))) {
+          campoDatos.setValor(textoSerie(lista));
+        }
+      } catch {
+        /* no era JSON: el lector normal explicará el problema */
+      }
+    }
+    const lectura = campoDatos.lectura();
+    if (lectura.error) {
+      campoDatos.setError(lectura.error.mensaje);
+      campoDatos.enfocar();
+      alertaError(`${lectura.error.mensaje} ${lectura.error.sugerencia || ""}`.trim());
       return;
     }
-    if (valores.length < 2) {
+    if (lectura.valores.length < 2) {
+      campoDatos.setError("Hacen falta al menos dos observaciones.");
+      campoDatos.enfocar();
       alertaError("Necesito al menos dos observaciones numéricas para describir la muestra.");
       return;
     }
-    if (valores.length > 50000) {
+    if (lectura.valores.length > 50000) {
+      campoDatos.setError("El máximo es de 50 000 observaciones.");
       alertaError("El máximo es de 50 000 observaciones. Divide el archivo o usa una muestra.");
       return;
     }
@@ -509,7 +474,8 @@ export async function montar(host) {
     estadoAnalisis.replaceChildren(el("span", { class: "pulso" }), "Calculando…");
     resultadoHost.setAttribute("aria-busy", "true");
     try {
-      const datos = await api.post("/api/descriptiva", { datos: valores }, { senal: controlador.signal });
+      // Se envía el texto tal cual: el motor lo lee con la misma gramática y devuelve sus avisos.
+      const datos = await api.post("/api/descriptiva", { datos: campoDatos.texto() }, { senal: controlador.signal });
       resultado = datos;
       bins = null;
       renderResultado();
@@ -524,8 +490,10 @@ export async function montar(host) {
       estadoAnalisis.replaceChildren(`Actualizado ${new Date().toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" })}`);
     } catch (error) {
       if (!esCancelacion(error)) {
-        alertaError(error.message);
-        toast(error.message, { tipo: "error" });
+        errorEnCampo(error, { datos: campoDatos });
+        alertaError(textoError(error));
+        estadoAnalisis.replaceChildren("No se pudo analizar");
+        anunciar(`Error: ${error.message}`);
       }
     } finally {
       botonAnalizar.cargando(false);
@@ -549,7 +517,8 @@ export async function montar(host) {
       `Mín: ${fmtNum(s.minimo)} · Q1: ${fmtNum(s.q1)} · Q3: ${fmtNum(s.q3)} · Máx: ${fmtNum(s.maximo)}`,
       `Rango: ${fmtNum(s.rango)} · IQR: ${fmtNum(s.iqr)} · CV: ${s.cv !== null ? fmtPorcentaje(s.cv) : "—"}`,
       `Asimetría: ${fmtNum(s.sesgo)} · Curtosis: ${fmtNum(s.curtosis)}`,
-      `Atípicos: ${(r.atipicos || []).length}`,
+      `Moda(s): ${textoModas(s)}`,
+      `Atípicos: ${r.n_atipicos ?? (r.atipicos || []).length}`,
       r.interpretacion,
     ].join("\n");
   }
@@ -568,7 +537,7 @@ export async function montar(host) {
               icono: "descargar",
               onClick: () => {
                 if (!ejemplo) return;
-                campoDatos.setValor(ejemplo.datos.join(", "));
+                campoDatos.setValor(textoSerie(ejemplo.datos));
                 actualizarContador();
                 fijarPestana("pegar");
                 analizar();
@@ -589,7 +558,7 @@ export async function montar(host) {
       "div",
       { class: "rejilla rejilla--kpi" },
       kpi({ etiqueta: "Observaciones", valor: fmtNum(r.n, { entero: true }), detalle: "n" }),
-      kpi({ etiqueta: "Media", valor: fmtNum(s.media), detalle: `IC 95 %: ${fmtNum(s.ic_media[0])} – ${fmtNum(s.ic_media[1])}`, tono: "marca" }),
+      kpi({ etiqueta: "Media", valor: fmtNum(s.media), detalle: `IC ${fmtPorcentaje(s.ic_nivel ?? 0.95, 0)}: ${fmtIntervalo(s.ic_media)}`, tono: "marca" }),
       kpi({ etiqueta: "Mediana", valor: fmtNum(s.mediana), detalle: "percentil 50" }),
       kpi({ etiqueta: "Desviación", valor: fmtNum(s.desviacion), detalle: "muestral (n−1)" }),
       kpi({ etiqueta: "Coef. variación", valor: s.cv !== null ? fmtPorcentaje(s.cv) : "—", detalle: "dispersión relativa" }),
@@ -645,7 +614,7 @@ export async function montar(host) {
     }, 0);
     const panelCaja = panel({
       titulo: "Caja y bigotes",
-      subtitulo: "Los puntos fuera de los bigotes son candidatos a atípicos (1,5 · IQR).",
+      subtitulo: "Los bigotes llegan al dato más extremo dentro de 1,5 · IQR; los puntos sueltos son candidatos a atípicos.",
       icono: "caja",
       contenido: hostCaja,
     });
@@ -664,7 +633,7 @@ export async function montar(host) {
     const atipicos = r.atipicos || [];
     const panelAtipicos = panel({
       titulo: "Valores atípicos",
-      subtitulo: `Criterio de Tukey: fuera de [${fmtNum(r.limites_atipicos[0])}, ${fmtNum(r.limites_atipicos[1])}]`,
+      subtitulo: `Criterio de Tukey: fuera de ${fmtIntervalo(r.limites_atipicos)}${(r.n_atipicos ?? 0) > (r.atipicos || []).length ? ` · ${r.n_atipicos} en total` : ""}`,
       icono: "alerta",
       contenido: atipicos.length
         ? el(
@@ -701,7 +670,8 @@ export async function montar(host) {
           if (!ecdf) return;
           dibujar(hostEcdf, {
             tipo: "linea",
-            series: [{ nombre: "Fₙ(x)", x: ecdf.x, y: ecdf.y, color: "var(--grafico-2)" }],
+            // La función de distribución empírica es escalonada: salta 1/n en cada dato.
+            series: [{ nombre: "Fₙ(x)", x: ecdf.x, y: ecdf.y, color: "var(--grafico-2)", escalon: true, marcadores: false, trazo: "" }],
             xlabel: "x",
             ylabel: "Proporción acumulada",
             altura: 230,
@@ -741,6 +711,7 @@ export async function montar(host) {
         "div",
         { class: "pila" },
         alerta({ tipo: "info", titulo: "Lectura rápida", texto: r.interpretacion }),
+        avisosMotor(r.avisos),
         kpis,
         el("div", { class: "rejilla rejilla--2" }, panelHistograma, panelCaja),
         el("div", { class: "rejilla rejilla--2" }, panelStats, panelAtipicos),
@@ -774,7 +745,7 @@ export async function montar(host) {
       try {
         await api.exportar({
           formato,
-          titulo: "Análisis descriptivo · AmPu 3.1",
+          titulo: "Análisis descriptivo · AmPu 3.2",
           resumen: resumenTexto(),
           tablas,
           figura,
@@ -783,7 +754,7 @@ export async function montar(host) {
         });
         toast(`Archivo ${formato.toUpperCase()} generado`, { tipo: "ok" });
       } catch (error) {
-        if (!esCancelacion(error)) toast(error.message, { tipo: "error" });
+        if (!esCancelacion(error)) toast(textoError(error), { tipo: "error" });
       }
     });
   }

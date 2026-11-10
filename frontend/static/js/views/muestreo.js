@@ -6,6 +6,7 @@ import {
   kpi,
   tabla,
   alerta,
+  textoError,
   estadoVacio,
   toast,
   copiar,
@@ -19,6 +20,7 @@ import {
   pliegue,
   anunciar,
   botonesExportar,
+  comportamientoScroll,
 } from "../ui.js";
 import { icono } from "../icons.js";
 import { dibujar } from "../chart.js";
@@ -60,7 +62,7 @@ export async function montar(host, parametro) {
   try {
     metaDatos = await cargarMeta();
   } catch (error) {
-    host.append(alerta({ tipo: "error", titulo: "El motor no responde", texto: error.message }));
+    host.append(alerta({ tipo: "error", titulo: "El motor no responde", texto: textoError(error) }));
     return null;
   }
 
@@ -225,7 +227,7 @@ export async function montar(host, parametro) {
       anunciar(`Tamaño muestral recomendado: ${datos.n}.`);
     } catch (error) {
       if (!esCancelacion(error)) {
-        resultadoTamanoHost.replaceChildren(alerta({ tipo: "error", titulo: "No se pudo calcular n", texto: error.message }));
+        resultadoTamanoHost.replaceChildren(alerta({ tipo: "error", titulo: "No se pudo calcular n", texto: textoError(error) }));
       }
       estadoTamano.replaceChildren("");
     } finally {
@@ -254,7 +256,7 @@ export async function montar(host, parametro) {
               if (conPoblacion && camposMuestra.N) camposMuestra.N.setValor(payload.N);
               actualizarResumen();
               toast(`n = ${datos.n} trasladado al diseño de selección.`, { tipo: "ok" });
-              document.querySelector(".seccion-seleccion")?.scrollIntoView({ behavior: "smooth", block: "start" });
+              document.querySelector(".seccion-seleccion")?.scrollIntoView({ behavior: comportamientoScroll(), block: "start" });
             },
           }),
         ],
@@ -638,7 +640,7 @@ export async function montar(host, parametro) {
       anunciar(`Muestra de ${datos.total_muestra} unidades generada.`);
     } catch (error) {
       if (!esCancelacion(error)) {
-        resultadoMuestraHost.replaceChildren(alerta({ tipo: "error", titulo: "No se pudo generar la muestra", texto: error.message }));
+        resultadoMuestraHost.replaceChildren(alerta({ tipo: "error", titulo: "No se pudo generar la muestra", texto: textoError(error) }));
       }
       estadoMuestra.replaceChildren("");
     } finally {
@@ -770,7 +772,7 @@ export async function montar(host, parametro) {
         });
         toast(`Archivo ${formato.toUpperCase()} generado`, { tipo: "ok" });
       } catch (error) {
-        if (!esCancelacion(error)) toast(error.message, { tipo: "error" });
+        if (!esCancelacion(error)) toast(textoError(error), { tipo: "error" });
       }
     });
   }

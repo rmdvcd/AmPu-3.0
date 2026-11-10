@@ -6,9 +6,12 @@ se sirve desde ``frontend/`` y funciona sin conexión a Internet.
 
 Decisiones de diseño relevantes:
 
-* El motor no se modifica: toda la validación de dominio sigue viviendo en
-  ``ampu.core``.  Aquí solo se normalizan entradas, se serializa de forma
-  segura (±∞, NaN) y se añaden datos para las visualizaciones.
+* Toda la validación de dominio y todo el cálculo viven en ``ampu.core``.
+  Aquí solo se leen las entradas (con el analizador único ``ampu.core.entrada``),
+  se serializa de forma segura (±∞, NaN) y se preparan las visualizaciones.
+* Los números viajan **sin redondear**: el formato es asunto de la interfaz.
+* Cada error lleva ``tipo`` (sintaxis, dominio, ambiguedad, timeout,
+  fuera_de_alcance), ``campo`` culpable y ``sugerencia`` de recuperación.
 * Ninguna ruta evalúa código enviado por el cliente (sin ``eval``/``exec``).
 * Los recursos de KaTeX y la teoría viajan con el paquete, de modo que la app
   es realmente portable y funciona sin CDN.
@@ -25,8 +28,10 @@ import shutil
 import sys
 import tempfile
 import threading
+import time
 import unicodedata
 from datetime import datetime, timezone
+from fractions import Fraction
 from functools import lru_cache
 from pathlib import Path
 
@@ -65,7 +70,7 @@ for _ruta in (str(ENGINE_DIR), *([str(VENDOR_DIR)] if VENDOR_DIR else [])):
     if _ruta not in sys.path:
         sys.path.insert(0, _ruta)
 
-from flask import Flask, after_this_request, jsonify, request, send_file, send_from_directory  # noqa: E402
+from flask import Flask, after_this_request, g, jsonify, request, send_file, send_from_directory  # noqa: E402
 from werkzeug.exceptions import HTTPException  # noqa: E402
 
 import numpy as np  # noqa: E402
@@ -75,7 +80,10 @@ from scipy import stats  # noqa: E402
 from ampu import __version__ as MOTOR_VERSION  # noqa: E402
 from ampu.core.distribuciones import catalogo, obtener  # noqa: E402
 from ampu.core.distribuciones.tabla import analizar  # noqa: E402
-from ampu.core.errores import ErrorAmPu  # noqa: E402
+from ampu.core import entrada  # noqa: E402
+from ampu.core.errores import (  # noqa: E402
+    EntradaInvalidaError, ErrorAmPu, FueraDeAlcanceError, ParametroInvalidoError, TiempoExcedidoError,
+)
 from ampu.core.estadistica import combinatoria, descriptiva  # noqa: E402
 from ampu.core.estadistica import inferencia as inf  # noqa: E402
 from ampu.core.estadistica import probabilidad as prob  # noqa: E402
@@ -89,7 +97,7 @@ from ampu.io.servicio import ServicioExportacion  # noqa: E402
 
 import markdown  # noqa: E402
 
-VERSION_APP = "3.1.0"
+VERSION_APP = "3.2.0"
 DOCS_DIR = ENGINE_DIR / "ampu" / "docs"
 TEORIA_DIR = DOCS_DIR / "teoria"
 RENDER_DIR = DOCS_DIR / "render"
@@ -118,11 +126,104 @@ log = logging.getLogger("ampu.web")
 
 
 # ---------------------------------------------------------------------------
+# Seguridad de un servidor local y plazo de cálculo
+# ---------------------------------------------------------------------------
+
+LIMITE_SEGUNDOS = float(os.environ.get("AMPU_LIMITE_SEGUNDOS", "20"))
+_HOSTS_LOCALES = {"localhost", "127.0.0.1", "::1", "[::1]"}
+
+
+def _hosts_permitidos() -> set[str] | None:
+    """Nombres de host aceptados; ``None`` desactiva la comprobación (AMPU_HOSTS_PERMITIDOS=*)."""
+    extra = os.environ.get("AMPU_HOSTS_PERMITIDOS", "").strip()
+    if extra == "*":
+        return None
+    permitidos = set(_HOSTS_LOCALES)
+    permitidos.update(h.strip().lower() for h in extra.split(",") if h.strip())
+    anfitrion = os.environ.get("AMPU_HOST", "").strip().lower()
+    if anfitrion and anfitrion not in {"0.0.0.0", "::"}:
+        permitidos.add(anfitrion)
+    return permitidos
+
+
+def _nombre_host(valor: str) -> str:
+    valor = (valor or "").strip().lower()
+    if valor.startswith("["):  # IPv6 con corchetes
+        return valor.split("]")[0] + "]"
+    return valor.rsplit(":", 1)[0] if ":" in valor else valor
+
+
+@app.before_request
+def _proteger_y_cronometrar():
+    """Rechaza peticiones dirigidas a otro host (DNS rebinding) u originadas en otro sitio."""
+    g.inicio = time.monotonic()
+    g.plazo = g.inicio + LIMITE_SEGUNDOS
+    permitidos = _hosts_permitidos()
+    if permitidos is None:
+        return None
+    if _nombre_host(request.host) not in permitidos:
+        return _error("Host no permitido. AmPu solo atiende peticiones a esta máquina.", 403, tipo="seguridad",
+                      sugerencia="Abre AmPu en http://127.0.0.1 o añade el nombre a AMPU_HOSTS_PERMITIDOS.")
+    origen = request.headers.get("Origin")
+    if origen and request.method not in {"GET", "HEAD", "OPTIONS"}:
+        destino = re.sub(r"^https?://", "", origen.strip().lower())
+        if destino != request.host.lower():
+            return _error("Origen no permitido: la petición procede de otro sitio web.", 403, tipo="seguridad")
+    return None
+
+
+_CSP = (
+    "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; "
+    "img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; "
+    "object-src 'none'; base-uri 'self'; form-action 'self'"
+)
+
+
+@app.after_request
+def _cabeceras_seguridad(respuesta):
+    respuesta.headers.setdefault("X-Content-Type-Options", "nosniff")
+    respuesta.headers.setdefault("Referrer-Policy", "no-referrer")
+    respuesta.headers.setdefault("Cross-Origin-Resource-Policy", "same-origin")
+    respuesta.headers.setdefault("Permissions-Policy", "camera=(), microphone=(), geolocation=(), payment=()")
+    csp = _CSP
+    if os.environ.get("AMPU_PERMITIR_IFRAME") != "1":
+        # Por defecto nadie puede incrustar AmPu en un marco (clickjacking).
+        respuesta.headers.setdefault("X-Frame-Options", "DENY")
+        csp += "; frame-ancestors 'none'"
+    respuesta.headers.setdefault("Content-Security-Policy", csp)
+    if request.path.startswith("/api/"):
+        respuesta.headers.setdefault("Cache-Control", "no-store")
+        inicio = g.get("inicio")
+        if inicio is not None:
+            duracion = time.monotonic() - inicio
+            respuesta.headers["X-AmPu-Duracion-ms"] = str(int(duracion * 1000))
+            if duracion > LIMITE_SEGUNDOS:
+                log.warning("%s tardó %.1f s (límite %.0f s)", request.path, duracion, LIMITE_SEGUNDOS)
+    return respuesta
+
+
+def _comprobar_plazo(etapa: str = "") -> None:
+    """Punto de control cooperativo: corta entre etapas si ya se agotó el plazo.
+
+    No interrumpe una llamada a NumPy/SciPy en curso (Python no puede abortar un
+    hilo); por eso la defensa principal son las cotas de tamaño de las entradas.
+    """
+    if time.monotonic() > g.get("plazo", float("inf")):
+        raise TiempoExcedidoError(
+            f"El cálculo superó el límite de {LIMITE_SEGUNDOS:.0f} s" + (f" ({etapa})." if etapa else "."),
+            sugerencia="Reduce el tamaño de los datos o el número de simulaciones.")
+
+
+# ---------------------------------------------------------------------------
 # Utilidades de serialización y validación
 # ---------------------------------------------------------------------------
 
 def _valor(v):
-    """Convierte valores NumPy/pandas a JSON, representando infinitos como texto."""
+    """Convierte valores NumPy/pandas a JSON, representando infinitos como texto.
+
+    No redondea: un p-valor de 4,8e-32 debe llegar a la interfaz como 4,8e-32,
+    no como 0.  El número de cifras visibles lo decide la capa de presentación.
+    """
     if v is None:
         return None
     if isinstance(v, (np.bool_, bool)):
@@ -135,7 +236,9 @@ def _valor(v):
             return None
         if math.isinf(f):
             return "∞" if f > 0 else "−∞"
-        return round(f, 12)
+        return f
+    if isinstance(v, Fraction):
+        return float(v)
     if isinstance(v, np.ndarray):
         return [_valor(x) for x in v.tolist()]
     if isinstance(v, pd.DataFrame):
@@ -161,51 +264,81 @@ def _tabla(df: pd.DataFrame, limite: int = 500) -> dict:
     }
 
 
-def _error(mensaje: str, estado: int = 400, campo: str | None = None, tipo: str = "validacion"):
-    return jsonify({"error": mensaje, "campo": campo, "tipo": tipo}), estado
+class ErrorPeticion(EntradaInvalidaError):
+    """Petición mal formada: falta un campo, opción desconocida, etc."""
+
+    tipo = "sintaxis"
+
+
+def _error(mensaje: str, estado: int = 400, campo: str | None = None, tipo: str = "sintaxis",
+           sugerencia: str | None = None, posicion: int | None = None, detalle: dict | None = None):
+    cuerpo = {"error": mensaje, "campo": campo, "tipo": tipo}
+    if sugerencia:
+        cuerpo["sugerencia"] = sugerencia
+    if posicion is not None:
+        cuerpo["posicion"] = posicion
+    if detalle:
+        cuerpo["detalle"] = _valor(detalle)
+    return jsonify(cuerpo), estado
 
 
 def _cuerpo() -> dict:
     datos = request.get_json(silent=True)
     if datos is None:
-        raise ValueError("El cuerpo de la petición debe ser JSON válido.")
+        raise ErrorPeticion("El cuerpo de la petición debe ser JSON válido.")
     if not isinstance(datos, dict):
-        raise ValueError("El cuerpo JSON debe ser un objeto.")
+        raise ErrorPeticion("El cuerpo JSON debe ser un objeto.")
     return datos
 
 
 def _texto(valor, campo: str, obligatorio: bool = True) -> str | None:
     if valor is None:
         if obligatorio:
-            raise ValueError(f"Falta el campo «{campo}».")
+            raise ErrorPeticion(f"Falta el campo «{campo}».", campo=campo)
         return None
     texto = str(valor).strip()
     if obligatorio and not texto:
-        raise ValueError(f"El campo «{campo}» no puede estar vacío.")
+        raise ErrorPeticion(f"El campo «{campo}» no puede estar vacío.", campo=campo)
     return texto
 
 
-def _numero(valor, campo: str, defecto: float | None = None) -> float:
-    if valor is None or (isinstance(valor, str) and not valor.strip()):
+def _vacio(valor) -> bool:
+    return valor is None or (isinstance(valor, str) and not valor.strip())
+
+
+def _numero(valor, campo: str, defecto: float | None = None, id_campo: str | None = None) -> float:
+    """Lee un número con el analizador único (coma o punto decimal)."""
+    if _vacio(valor):
         if defecto is not None:
             return float(defecto)
-        raise ValueError(f"Falta el valor numérico «{campo}».")
-    if isinstance(valor, bool):
-        raise ValueError(f"«{campo}» debe ser un número.")
+        raise ErrorPeticion(f"Falta el valor numérico «{campo}».", campo=id_campo or campo,
+                            sugerencia="Rellena el campo con un número.")
     try:
-        numero = float(str(valor).replace(",", ".")) if isinstance(valor, str) else float(valor)
-    except (TypeError, ValueError) as exc:
-        raise ValueError(f"«{campo}» debe ser un número válido.") from exc
-    if not math.isfinite(numero):
-        raise ValueError(f"«{campo}» debe ser finito.")
-    return numero
+        return entrada.leer_numero(valor, campo)
+    except ErrorAmPu as exc:
+        exc.campo = id_campo or campo
+        raise
 
 
-def _entero(valor, campo: str, defecto: int | None = None) -> int:
-    numero = _numero(valor, campo, defecto)
+def _entero(valor, campo: str, defecto: int | None = None, id_campo: str | None = None) -> int:
+    numero = _numero(valor, campo, defecto, id_campo)
     if not float(numero).is_integer():
-        raise ValueError(f"«{campo}» debe ser un número entero.")
+        raise ErrorPeticion(f"«{campo}» debe ser un número entero.", campo=id_campo or campo)
+    if abs(numero) > 2**53:
+        raise FueraDeAlcanceError(f"«{campo}» es demasiado grande para tratarse como entero exacto.",
+                                  campo=id_campo or campo)
     return int(numero)
+
+
+def _racional(valor, campo: str, id_campo: str | None = None):
+    """Lee una probabilidad como fracción exacta si se escribió como a/b; si no, como decimal."""
+    if _vacio(valor):
+        raise ErrorPeticion(f"Falta el valor «{campo}».", campo=id_campo or campo)
+    try:
+        return entrada.leer_numero(valor, campo, fraccion=True)
+    except ErrorAmPu as exc:
+        exc.campo = id_campo or campo
+        raise
 
 
 def _booleano(valor, defecto: bool = False) -> bool:
@@ -216,95 +349,122 @@ def _booleano(valor, defecto: bool = False) -> bool:
     return str(valor).strip().lower() in {"1", "true", "si", "sí", "on", "yes"}
 
 
+def _json_si_procede(valor, campo: str):
+    """Admite listas escritas como texto JSON («[1, 2, 3]»)."""
+    if isinstance(valor, str) and valor.strip().startswith("["):
+        try:
+            return json.loads(valor)
+        except json.JSONDecodeError as exc:
+            raise ErrorPeticion(f"«{campo}» no es una lista JSON válida.", campo=campo,
+                                sugerencia="Escribe los valores separados por espacios.") from exc
+    return valor
+
+
+def _lectura(valor, campo: str = "datos", minimo: int = 2, maximo: int = 100_000,
+             fraccion: bool = False) -> entrada.Lectura:
+    """Lee una serie y conserva los avisos de interpretación."""
+    if _vacio(valor):
+        raise ErrorPeticion(f"La serie «{campo}» está vacía.", campo=campo,
+                            sugerencia="Escribe los valores separados por espacios, punto y coma o líneas.")
+    lectura = entrada.leer_serie(_json_si_procede(valor, campo), campo, minimo=minimo, maximo=maximo,
+                                 fraccion=fraccion)
+    if lectura.avisos:
+        g.setdefault("avisos_entrada", []).extend(lectura.avisos)
+    return lectura
+
+
+# Por encima de 10^150 los cuadrados (varianzas, sumas de cuadrados) desbordan la doble
+# precisión y darían «∞» o NaN silenciosos: es preferible rechazar con una explicación.
+MAGNITUD_MAXIMA = 1e150
+
+
+def _comprobar_magnitud(valores: np.ndarray, campo: str) -> np.ndarray:
+    if valores.size and float(np.max(np.abs(valores))) > MAGNITUD_MAXIMA:
+        posicion = int(np.argmax(np.abs(valores))) + 1
+        raise FueraDeAlcanceError(
+            f"«{campo}» contiene valores de magnitud superior a 10^150 (posición {posicion}): "
+            "las sumas de cuadrados desbordarían la doble precisión y el resultado no sería fiable.",
+            campo=campo, sugerencia="Cambia de unidades: divide todos los valores por una constante.",
+        )
+    return valores
+
+
 def _serie(valor, campo: str = "datos", minimo: int = 2, maximo: int = 100_000) -> np.ndarray:
     """Convierte una lista o un texto libre en una serie numérica finita."""
-    if valor is None:
-        raise ValueError(f"Falta la serie «{campo}».")
-    if isinstance(valor, (list, tuple)):
-        crudos = list(valor)
-    else:
-        texto = str(valor).strip()
-        if not texto:
-            raise ValueError(f"La serie «{campo}» está vacía.")
-        if texto.startswith("["):
-            try:
-                crudos = json.loads(texto)
-            except json.JSONDecodeError as exc:
-                raise ValueError(f"La serie «{campo}» no es una lista JSON válida.") from exc
-        else:
-            crudos = [p for p in re.split(r"[\s,;]+", texto) if p]
-    if len(crudos) > maximo:
-        raise ValueError(f"La serie «{campo}» supera el máximo de {maximo:,} valores.".replace(",", " "))
-    numeros: list[float] = []
-    for i, crudo in enumerate(crudos, start=1):
-        if isinstance(crudo, str):
-            crudo = crudo.strip()
-            if not crudo:
-                continue
-            crudo = crudo.replace(",", ".")
-        try:
-            numero = float(crudo)
-        except (TypeError, ValueError) as exc:
-            raise ValueError(
-                f"«{campo}»: el valor {i} («{crudo}») no es numérico. Usa punto decimal y separa con espacios, comas o líneas."
-            ) from exc
-        if not math.isfinite(numero):
-            raise ValueError(f"«{campo}»: el valor {i} no es finito.")
-        numeros.append(numero)
-    if len(numeros) < minimo:
-        raise ValueError(f"«{campo}» necesita al menos {minimo} observaciones numéricas.")
-    return np.asarray(numeros, dtype=float)
+    return _comprobar_magnitud(np.asarray(_lectura(valor, campo, minimo, maximo).valores, dtype=float), campo)
 
 
 def _matriz(valor, campo: str = "tabla", minimo_filas: int = 2, minimo_columnas: int = 2) -> np.ndarray:
-    """Convierte texto o listas anidadas en una matriz numérica rectangular."""
-    if valor is None:
-        raise ValueError(f"Falta «{campo}».")
-    if isinstance(valor, (list, tuple)):
-        filas = valor
-    else:
-        texto = str(valor).strip()
-        if not texto:
-            raise ValueError(f"«{campo}» está vacía.")
-        if texto.startswith("["):
-            try:
-                filas = json.loads(texto)
-            except json.JSONDecodeError as exc:
-                raise ValueError(f"«{campo}» no es una matriz JSON válida.") from exc
-        else:
-            filas = []
-            for linea in texto.splitlines():
-                linea = linea.strip()
-                if not linea:
-                    continue
-                celdas = [c for c in re.split(r"[\s,;]+", linea) if c]
-                filas.append(celdas)
-    try:
-        matriz = np.asarray([[float(str(c).replace(",", ".")) for c in fila] for fila in filas], dtype=float)
-    except (TypeError, ValueError) as exc:
-        raise ValueError(f"«{campo}» debe contener solo números; revisa filas y columnas.") from exc
-    if matriz.ndim != 2 or matriz.shape[0] < minimo_filas or matriz.shape[1] < minimo_columnas:
-        raise ValueError(f"«{campo}» debe tener al menos {minimo_filas} filas y {minimo_columnas} columnas.")
-    if not np.all(np.isfinite(matriz)):
-        raise ValueError(f"«{campo}» contiene valores no finitos.")
-    return matriz
+    """Convierte texto (una fila por línea) o listas anidadas en una matriz rectangular."""
+    if _vacio(valor):
+        raise ErrorPeticion(f"Falta «{campo}».", campo=campo)
+    filas = entrada.leer_matriz(_json_si_procede(valor, campo), campo, minimo_filas=minimo_filas,
+                                minimo_columnas=minimo_columnas)
+    return _comprobar_magnitud(np.asarray(filas, dtype=float), campo)
 
 
 def _grupos(valor, campo: str = "grupos") -> list[np.ndarray]:
     """Interpreta un texto donde cada línea es un grupo de observaciones."""
     if isinstance(valor, (list, tuple)):
-        lineas = valor
+        lineas = list(valor)
     else:
-        lineas = [l for l in str(valor or "").splitlines() if l.strip()]
+        lineas = [linea for linea in str(valor or "").splitlines() if linea.strip()]
     if len(lineas) < 2:
-        raise ValueError(f"«{campo}» necesita al menos dos líneas (un grupo por línea).")
+        raise ErrorPeticion(f"«{campo}» necesita al menos dos líneas (un grupo por línea).", campo=campo)
     grupos = []
     for i, linea in enumerate(lineas, start=1):
-        if isinstance(linea, (list, tuple)):
-            grupos.append(_serie(list(linea), f"{campo} · grupo {i}", minimo=2))
-        else:
-            grupos.append(_serie(str(linea), f"{campo} · grupo {i}", minimo=2))
+        try:
+            grupos.append(_serie(list(linea) if isinstance(linea, (list, tuple)) else str(linea),
+                                 f"{campo} · grupo {i}", minimo=2))
+        except ErrorAmPu as exc:
+            exc.campo = campo
+            raise
     return grupos
+
+
+def _avisos_entrada() -> list[str]:
+    """Avisos de interpretación acumulados durante la petición (sin duplicados)."""
+    return list(dict.fromkeys(g.get("avisos_entrada", [])))
+
+
+def _parametros_modelo(modelo, crudos, campo: str = "parametros") -> dict:
+    """Lee los parámetros de una distribución sin descartar ni inventar ninguno.
+
+    Un nombre desconocido o un parámetro ausente es un error declarado: antes
+    se ignoraba el primero y se rellenaba el segundo con el valor por defecto.
+    """
+    if crudos is None:
+        crudos = {}
+    if not isinstance(crudos, dict):
+        raise ErrorPeticion("«parametros» debe ser un objeto con los valores del modelo.", campo=campo)
+    tipos = {p.nombre: p.tipo for p in modelo.parametros}
+    desconocidos = sorted(set(crudos) - set(tipos))
+    if desconocidos:
+        raise ParametroInvalidoError(
+            f"{modelo.nombre} no tiene el parámetro «{', '.join(desconocidos)}».", campo=desconocidos[0],
+            sugerencia="Parámetros admitidos: " + ", ".join(tipos) + ".")
+    ausentes = [n for n in tipos if _vacio(crudos.get(n)) and not isinstance(crudos.get(n), (list, tuple))]
+    if ausentes:
+        raise ErrorPeticion(
+            f"Falta el parámetro «{ausentes[0]}» de {modelo.nombre}.", campo=ausentes[0],
+            sugerencia="Rellena todos los parámetros del modelo; AmPu no asume valores por defecto.")
+    parametros: dict = {}
+    for nombre, valor in crudos.items():
+        tipo = tipos[nombre]
+        if tipo.startswith("vector"):
+            valores = entrada.leer_serie(_json_si_procede(valor, nombre), nombre, minimo=2, maximo=64,
+                                         fraccion=True).valores
+            valores = [float(v) for v in valores]
+            if tipo == "vector_entero":
+                if any(not v.is_integer() for v in valores):
+                    raise ParametroInvalidoError(f"«{nombre}» debe contener solo enteros.", campo=nombre)
+                valores = [int(v) for v in valores]
+            parametros[nombre] = valores
+        elif tipo == "entero":
+            parametros[nombre] = _entero(valor, nombre)
+        else:
+            parametros[nombre] = _numero(valor, nombre)
+    return parametros
 
 
 def _latex_escapar(texto: str) -> str:
@@ -533,10 +693,12 @@ CATALOGO_PRUEBAS = [
     {
         "clave": "t_una", "nombre": "t de Student · una media", "grupo": "Medias",
         "descripcion": "Contrasta la media de una muestra cuando se desconoce la desviación poblacional.",
-        "h0": "μ = μ₀", "h1": "μ ≠ μ₀ (según alternativa)",
+        "h0": "μ = μ₀", "h1": "μ ≠ μ₀",
+        "admite_alternativa": True,
+        "h1_alternativas": {"two-sided": "μ ≠ μ₀", "less": "μ < μ₀", "greater": "μ > μ₀"},
         "supuestos": "Observaciones independientes; aproximadamente normales o n grande.",
         "campos": [
-            _campo("datos", "Muestra", "serie", ejemplo="12.4, 11.8, 13.1, 12.9, 12.2, 12.7"),
+            _campo("datos", "Muestra", "serie", ejemplo="12,4 11,8 13,1 12,9 12,2 12,7"),
             _campo("mu0", "Media nula μ₀", "numero", default=12),
         ],
         "teoria": "prueba_t_una",
@@ -544,10 +706,12 @@ CATALOGO_PRUEBAS = [
     {
         "clave": "z_una", "nombre": "z · una media (σ conocida)", "grupo": "Medias",
         "descripcion": "Contrasta una media cuando la desviación estándar poblacional es conocida.",
-        "h0": "μ = μ₀", "h1": "μ ≠ μ₀ (según alternativa)",
+        "h0": "μ = μ₀", "h1": "μ ≠ μ₀",
+        "admite_alternativa": True,
+        "h1_alternativas": {"two-sided": "μ ≠ μ₀", "less": "μ < μ₀", "greater": "μ > μ₀"},
         "supuestos": "σ poblacional conocida; muestra grande o población normal.",
         "campos": [
-            _campo("datos", "Muestra", "serie", ejemplo="10.1, 9.8, 10.4, 9.9, 10.2"),
+            _campo("datos", "Muestra", "serie", ejemplo="10,1 9,8 10,4 9,9 10,2"),
             _campo("mu0", "Media nula μ₀", "numero", default=10),
             _campo("sigma", "Desviación poblacional σ", "numero", default=0.5, min=0.0001),
         ],
@@ -556,31 +720,37 @@ CATALOGO_PRUEBAS = [
     {
         "clave": "t_dos", "nombre": "t de Welch · dos medias", "grupo": "Medias",
         "descripcion": "Compara dos medias independientes sin asumir varianzas iguales.",
-        "h0": "μ₁ = μ₂", "h1": "μ₁ ≠ μ₂ (según alternativa)",
+        "h0": "μ₁ = μ₂", "h1": "μ₁ ≠ μ₂",
+        "admite_alternativa": True,
+        "h1_alternativas": {"two-sided": "μ₁ ≠ μ₂", "less": "μ₁ < μ₂", "greater": "μ₁ > μ₂"},
         "supuestos": "Grupos independientes; normalidad aproximada; no exige igualdad de varianzas.",
         "campos": [
-            _campo("datos", "Grupo A", "serie", ejemplo="12, 13, 11, 14, 12, 13"),
-            _campo("datos2", "Grupo B", "serie", ejemplo="15, 16, 14, 15, 17, 16"),
+            _campo("datos", "Grupo A", "serie", ejemplo="12 13 11 14 12 13"),
+            _campo("datos2", "Grupo B", "serie", ejemplo="15 16 14 15 17 16"),
         ],
         "teoria": "prueba_t_dos",
     },
     {
         "clave": "z_dos", "nombre": "z · dos medias (σ conocidas)", "grupo": "Medias",
         "descripcion": "Compara dos medias independientes con desviaciones poblacionales conocidas.",
-        "h0": "μ₁ = μ₂", "h1": "μ₁ ≠ μ₂ (según alternativa)",
+        "h0": "μ₁ = μ₂", "h1": "μ₁ ≠ μ₂",
+        "admite_alternativa": True,
+        "h1_alternativas": {"two-sided": "μ₁ ≠ μ₂", "less": "μ₁ < μ₂", "greater": "μ₁ > μ₂"},
         "supuestos": "σ₁ y σ₂ conocidas; grupos independientes.",
         "campos": [
-            _campo("datos", "Grupo A", "serie", ejemplo="12, 13, 11, 14, 12, 13"),
-            _campo("datos2", "Grupo B", "serie", ejemplo="15, 16, 14, 15, 17, 16"),
+            _campo("datos", "Grupo A", "serie", ejemplo="12 13 11 14 12 13"),
+            _campo("datos2", "Grupo B", "serie", ejemplo="15 16 14 15 17 16"),
             _campo("sigma_a", "σ del grupo A", "numero", default=1.2, min=0.0001),
             _campo("sigma_b", "σ del grupo B", "numero", default=1.4, min=0.0001),
         ],
         "teoria": "prueba_z_dos",
     },
     {
-        "clave": "prop_una", "nombre": "z · una proporción", "grupo": "Proporciones",
+        "clave": "prop_una", "nombre": "Una proporción (z o binomial exacta)", "grupo": "Proporciones",
         "descripcion": "Contrasta una proporción observada frente a un valor de referencia.",
-        "h0": "p = p₀", "h1": "p ≠ p₀ (según alternativa)",
+        "h0": "p = p₀", "h1": "p ≠ p₀",
+        "admite_alternativa": True,
+        "h1_alternativas": {"two-sided": "p ≠ p₀", "less": "p < p₀", "greater": "p > p₀"},
         "supuestos": "Aproximación normal: n·p₀ ≥ 5 y n·(1−p₀) ≥ 5.",
         "campos": [
             _campo("exitos", "Éxitos observados", "entero", default=48, min=0),
@@ -590,9 +760,11 @@ CATALOGO_PRUEBAS = [
         "teoria": "prueba_proporcion_una",
     },
     {
-        "clave": "prop_dos", "nombre": "z · dos proporciones", "grupo": "Proporciones",
+        "clave": "prop_dos", "nombre": "Dos proporciones (z o Fisher exacta)", "grupo": "Proporciones",
         "descripcion": "Compara las proporciones de éxito de dos grupos independientes.",
-        "h0": "p₁ = p₂", "h1": "p₁ ≠ p₂ (según alternativa)",
+        "h0": "p₁ = p₂", "h1": "p₁ ≠ p₂",
+        "admite_alternativa": True,
+        "h1_alternativas": {"two-sided": "p₁ ≠ p₂", "less": "p₁ < p₂", "greater": "p₁ > p₂"},
         "supuestos": "Muestras independientes; frecuencias esperadas suficientes.",
         "campos": [
             _campo("x1", "Éxitos del grupo 1", "entero", default=45, min=0),
@@ -606,6 +778,7 @@ CATALOGO_PRUEBAS = [
         "clave": "chi_indep", "nombre": "χ² · independencia", "grupo": "Asociación",
         "descripcion": "Comprueba si dos variables categóricas son independientes a partir de una tabla de contingencia.",
         "h0": "Las variables son independientes", "h1": "Existe asociación",
+        "admite_alternativa": False,
         "supuestos": "Frecuencias esperadas ≥ 5 en la mayoría de celdas; observaciones independientes.",
         "campos": [
             _campo("tabla", "Tabla de contingencia", "matriz", ejemplo="30 20\n15 35", ayuda="Una fila por línea; separa columnas con espacios, comas o tabuladores."),
@@ -616,10 +789,11 @@ CATALOGO_PRUEBAS = [
         "clave": "chi_bondad", "nombre": "χ² · bondad de ajuste", "grupo": "Asociación",
         "descripcion": "Compara frecuencias observadas y esperadas bajo un modelo teórico.",
         "h0": "Los datos siguen la distribución propuesta", "h1": "Los datos no siguen la distribución propuesta",
+        "admite_alternativa": False,
         "supuestos": "Frecuencias esperadas ≥ 5; categorías mutuamente excluyentes.",
         "campos": [
-            _campo("observadas", "Frecuencias observadas", "serie", ejemplo="18, 22, 29, 31"),
-            _campo("esperadas", "Frecuencias esperadas", "serie", ejemplo="25, 25, 25, 25"),
+            _campo("observadas", "Frecuencias observadas", "serie", ejemplo="18 22 29 31"),
+            _campo("esperadas", "Frecuencias esperadas", "serie", ejemplo="25 25 25 25"),
             _campo("parametros_estimados", "Parámetros estimados (corrección de gl)", "entero", default=0, min=0),
         ],
         "teoria": "chi_bondad",
@@ -628,20 +802,23 @@ CATALOGO_PRUEBAS = [
         "clave": "anova", "nombre": "ANOVA · una vía", "grupo": "Medias",
         "descripcion": "Compara las medias de dos o más grupos independientes mediante la razón F.",
         "h0": "Todas las medias son iguales", "h1": "Al menos una media difiere",
+        "admite_alternativa": False,
         "supuestos": "Independencia, normalidad aproximada y homogeneidad de varianzas.",
         "campos": [
-            _campo("grupos", "Grupos", "grupos", ejemplo="10, 12, 11, 13\n14, 15, 13, 16\n9, 11, 10, 12", ayuda="Una línea por grupo; separa observaciones con comas o espacios."),
+            _campo("grupos", "Grupos", "grupos", ejemplo="10 12 11 13\n14 15 13 16\n9 11 10 12", ayuda="Una línea por grupo; separa observaciones con comas o espacios."),
         ],
         "teoria": "anova",
     },
     {
-        "clave": "correlacion", "nombre": "Correlación de Pearson", "grupo": "Asociación",
+        "clave": "correlacion", "nombre": "Correlación (Pearson o Spearman)", "grupo": "Asociación",
         "descripcion": "Cuantifica la fuerza y dirección de la relación lineal entre dos variables pareadas.",
         "h0": "ρ = 0", "h1": "ρ ≠ 0",
+        "admite_alternativa": True,
+        "h1_alternativas": {"two-sided": "ρ ≠ 0", "less": "ρ < 0", "greater": "ρ > 0"},
         "supuestos": "Pares completos; relación aproximadamente lineal (Pearson).",
         "campos": [
-            _campo("x", "Variable X", "serie", ejemplo="1, 2, 3, 4, 5, 6, 7, 8"),
-            _campo("y", "Variable Y", "serie", ejemplo="2.1, 2.9, 4.2, 4.8, 6.1, 6.9, 8.2, 8.8"),
+            _campo("x", "Variable X", "serie", ejemplo="1 2 3 4 5 6 7 8"),
+            _campo("y", "Variable Y", "serie", ejemplo="2,1 2,9 4,2 4,8 6,1 6,9 8,2 8,8"),
             _campo("metodo", "Coeficiente", "opcion", opciones=[["pearson", "Pearson (lineal)"], ["spearman", "Spearman (rangos)"]], default="pearson"),
         ],
         "teoria": "correlacion",
@@ -649,22 +826,26 @@ CATALOGO_PRUEBAS = [
     {
         "clave": "mann_whitney", "nombre": "Mann–Whitney U", "grupo": "No paramétricas",
         "descripcion": "Alternativa no paramétrica para comparar dos muestras independientes.",
-        "h0": "Las distribuciones son iguales", "h1": "Las distribuciones difieren",
+        "h0": "Las dos distribuciones son iguales", "h1": "Un grupo tiende a dar valores distintos del otro",
+        "admite_alternativa": True,
+        "h1_alternativas": {"two-sided": "Un grupo tiende a dar valores distintos del otro", "less": "El grupo A tiende a dar valores menores que el grupo B", "greater": "El grupo A tiende a dar valores mayores que el grupo B"},
         "supuestos": "Grupos independientes; variable al menos ordinal.",
         "campos": [
-            _campo("datos", "Grupo A", "serie", ejemplo="12, 13, 11, 14, 12, 13"),
-            _campo("datos2", "Grupo B", "serie", ejemplo="15, 16, 14, 15, 17, 16"),
+            _campo("datos", "Grupo A", "serie", ejemplo="12 13 11 14 12 13"),
+            _campo("datos2", "Grupo B", "serie", ejemplo="15 16 14 15 17 16"),
         ],
         "teoria": "mann_whitney",
     },
     {
         "clave": "wilcoxon", "nombre": "Wilcoxon · pareado", "grupo": "No paramétricas",
         "descripcion": "Compara dos mediciones pareadas sin asumir normalidad de las diferencias.",
-        "h0": "La mediana de las diferencias es 0", "h1": "La mediana de las diferencias difiere",
+        "h0": "Las diferencias (A − B) son simétricas en torno a 0", "h1": "Las diferencias (A − B) no están centradas en 0",
+        "admite_alternativa": True,
+        "h1_alternativas": {"two-sided": "Las diferencias (A − B) no están centradas en 0", "less": "Las diferencias (A − B) tienden a ser negativas", "greater": "Las diferencias (A − B) tienden a ser positivas"},
         "supuestos": "Pares completos; diferencias simétricas (aprox.).",
         "campos": [
-            _campo("datos", "Medición A", "serie", ejemplo="120, 118, 131, 129, 122, 127"),
-            _campo("datos2", "Medición B", "serie", ejemplo="115, 116, 128, 125, 120, 122"),
+            _campo("datos", "Medición A", "serie", ejemplo="120 118 131 129 122 127"),
+            _campo("datos2", "Medición B", "serie", ejemplo="115 116 128 125 120 122"),
         ],
         "teoria": "wilcoxon",
     },
@@ -672,9 +853,10 @@ CATALOGO_PRUEBAS = [
         "clave": "kruskal", "nombre": "Kruskal–Wallis", "grupo": "No paramétricas",
         "descripcion": "Compara dos o más grupos independientes usando rangos (ANOVA no paramétrica).",
         "h0": "Todos los grupos tienen la misma distribución", "h1": "Al menos un grupo difiere",
+        "admite_alternativa": False,
         "supuestos": "Grupos independientes; variable al menos ordinal.",
         "campos": [
-            _campo("grupos", "Grupos", "grupos", ejemplo="10, 12, 11, 13\n14, 15, 13, 16\n9, 11, 10, 12", ayuda="Una línea por grupo."),
+            _campo("grupos", "Grupos", "grupos", ejemplo="10 12 11 13\n14 15 13 16\n9 11 10 12", ayuda="Una línea por grupo."),
         ],
         "teoria": "kruskal",
     },
@@ -836,48 +1018,23 @@ def api_distribucion_calcular():
     datos = _cuerpo()
     clave = _texto(datos.get("clave"), "clave")
     modelo = obtener(clave)  # KeyError controlado por el manejador global
-    parametros_crudos = datos.get("parametros") or {}
-    if not isinstance(parametros_crudos, dict):
-        raise ValueError("«parametros» debe ser un objeto con los valores del modelo.")
-
-    tipos = {p.nombre: p.tipo for p in modelo.parametros}
-    parametros: dict = {}
-    for nombre, valor in parametros_crudos.items():
-        tipo = tipos.get(nombre)
-        if tipo is None:
-            continue  # el motor rechazará desconocidos con un mensaje claro
-        if tipo.startswith("vector"):
-            if isinstance(valor, str):
-                partes = [p for p in re.split(r"[\s,;]+", valor.strip()) if p]
-                parametros[nombre] = [float(_numero(p, nombre)) for p in partes]
-            elif isinstance(valor, (list, tuple)):
-                parametros[nombre] = [_numero(v, nombre) for v in valor]
-            else:
-                raise ValueError(f"«{nombre}» requiere una lista de valores separados por comas.")
-        elif tipo == "entero":
-            parametros[nombre] = _entero(valor, nombre)
-        else:
-            parametros[nombre] = _numero(valor, nombre)
+    parametros = _parametros_modelo(modelo, datos.get("parametros"))
 
     evento_crudo = datos.get("x", datos.get("evento"))
     if modelo.dimensionalidad == "univariante":
         evento: float | list[float] = _numero(evento_crudo, "x")
     else:
-        if isinstance(evento_crudo, (list, tuple)):
-            evento = [_numero(v, "x") for v in evento_crudo]
-        else:
-            texto = _texto(evento_crudo, "x") or ""
-            evento = [_numero(p, "x") for p in re.split(r"[\s,;]+", texto) if p]
+        evento = [float(v) for v in _lectura(evento_crudo, "x", minimo=1, maximo=64).valores]
 
     q = _numero(datos.get("q"), "q", 0.5)
     if not 0 <= q <= 1:
-        raise ValueError("El cuantil q debe estar entre 0 y 1.")
+        raise ParametroInvalidoError("El cuantil q debe estar entre 0 y 1.", campo="q")
     puntos = _entero(datos.get("puntos"), "puntos", 161)
     if not 41 <= puntos <= 401:
-        raise ValueError("La resolución debe estar entre 41 y 401 puntos.")
+        raise ParametroInvalidoError("La resolución debe estar entre 41 y 401 puntos.", campo="puntos")
     semilla = _entero(datos.get("semilla"), "semilla", 42)
     if semilla < 0:
-        raise ValueError("La semilla debe ser un entero no negativo.")
+        raise ParametroInvalidoError("La semilla debe ser un entero no negativo.", campo="semilla")
 
     resultado = analizar(clave, parametros, evento, q, semilla, puntos)
     respuesta = resultado.respuesta
@@ -896,17 +1053,18 @@ def api_distribucion_calcular():
     intervalo = None
     rango = datos.get("intervalo")
     if rango:
-        a = _numero(rango.get("a"), "intervalo.a")
-        b = _numero(rango.get("b"), "intervalo.b")
+        if not isinstance(rango, dict):
+            raise ErrorPeticion("«intervalo» debe ser un objeto con los extremos a y b.", campo="intervalo")
+        a = _numero(rango.get("a"), "a", id_campo="intervalo.a")
+        b = _numero(rango.get("b"), "b", id_campo="intervalo.b")
         if a > b:
-            raise ValueError("El extremo inferior a no puede superar b.")
+            raise ParametroInvalidoError("El extremo inferior a no puede superar b.", campo="intervalo.a")
         if modelo.dimensionalidad != "univariante":
-            raise ValueError("La probabilidad de intervalo sólo está disponible para modelos univariantes.")
-        limite_inferior = math.ceil(a) - 1 if modelo.discreta else a
-        p_intervalo = float(modelo.cdf(b, **parametros)) - float(modelo.cdf(limite_inferior, **parametros))
+            raise FueraDeAlcanceError(
+                "La probabilidad de intervalo solo está disponible para modelos univariantes.", campo="intervalo")
         intervalo = {
             "a": a, "b": b,
-            "probabilidad": _valor(max(0.0, min(1.0, p_intervalo))),
+            "probabilidad": _valor(_probabilidad_intervalo(modelo, parametros, a, b)),
             "etiqueta": f"P({_fmt_compacto(a)} ≤ X ≤ {_fmt_compacto(b)})",
         }
 
@@ -941,7 +1099,7 @@ def api_distribucion_calcular():
                 "densidad": {"valor": densidad, "etiqueta": etiqueta_densidad},
                 "acumulada": {"valor": _valor(respuesta["acumulada"]), "etiqueta": "P(X ≤ x)"},
                 "cola": {"valor": cola, "etiqueta": "P(X ≥ x)"} if cola is not None else None,
-                "cuantil": {"valor": _valor(respuesta["cuantil"]), "etiqueta": f"q = {q:g}"},
+                "cuantil": {"valor": _valor(respuesta["cuantil"]), "etiqueta": f"q = {_fmt_compacto(q)}"},
                 "media": _valor(respuesta["media"]),
                 "varianza": _valor(respuesta["varianza"]),
                 "desviacion": _valor(respuesta["desviacion"]),
@@ -956,6 +1114,7 @@ def api_distribucion_calcular():
                 if resultado.marginal else
                 "Los valores se calculan con precisión completa; la interfaz redondea sólo al mostrar."
             ),
+            "avisos": _avisos_entrada(),
         }
     )
 
@@ -963,7 +1122,41 @@ def api_distribucion_calcular():
 def _fmt_compacto(v: float) -> str:
     if isinstance(v, str):
         return v
-    return f"{v:.6g}"
+    return f"{v:.6g}".replace(".", ",")
+
+
+def _fmt_suma(suma) -> str:
+    """Suma de probabilidades con las cifras necesarias para que no se lea «1» si no lo es."""
+    valor = float(suma)
+    for cifras in (6, 9, 12, 15, 17):
+        texto = f"{valor:.{cifras}g}"
+        if float(texto) != 1.0 or valor == 1.0:
+            return texto.replace(".", ",")
+    return repr(valor).replace(".", ",")
+
+
+def _probabilidad_intervalo(modelo, parametros: dict, a: float, b: float) -> float:
+    """P(a ≤ X ≤ b) sin cancelación catastrófica en la cola derecha.
+
+    En la cola superior ``cdf(b) − cdf(a)`` resta dos números casi iguales a 1 y
+    pierde todas las cifras; allí se restan las funciones de supervivencia.
+    """
+    inferior = math.ceil(a) - 1 if modelo.discreta else a
+    cdf_a, cdf_b = float(modelo.cdf(inferior, **parametros)), float(modelo.cdf(b, **parametros))
+    p = cdf_b - cdf_a
+    if cdf_a > 0.5 and hasattr(modelo, "cola_inclusiva"):
+        try:
+            if modelo.discreta:
+                cola_a = float(modelo.cola_inclusiva(math.ceil(a), **parametros))
+                cola_b = float(modelo.cola_inclusiva(math.floor(b) + 1, **parametros))
+            else:
+                cola_a = float(modelo.cola_inclusiva(a, **parametros))
+                cola_b = float(modelo.cola_inclusiva(b, **parametros))
+            if math.isfinite(cola_a) and math.isfinite(cola_b):
+                p = cola_a - cola_b
+        except Exception:  # noqa: BLE001 - se conserva la diferencia de CDF
+            pass
+    return max(0.0, min(1.0, p))
 
 
 @app.post("/api/distribucion/muestra")
@@ -971,7 +1164,7 @@ def api_distribucion_muestra():
     datos = _cuerpo()
     clave = _texto(datos.get("clave"), "clave")
     modelo = obtener(clave)
-    parametros = datos.get("parametros") or {}
+    parametros = _parametros_modelo(modelo, datos.get("parametros"))
     n = _entero(datos.get("n"), "n", 1000)
     semilla = _entero(datos.get("semilla"), "semilla", 42)
     muestra = montecarlo.generar_muestra(clave, parametros, n, semilla)
@@ -992,26 +1185,43 @@ def api_descriptiva():
     datos = _cuerpo()
     x = _serie(datos.get("datos"), "datos", minimo=2)
     if len(x) > 50_000:
-        raise ValueError("La muestra supera 50 000 observaciones.")
+        raise FueraDeAlcanceError("La muestra supera 50 000 observaciones.", campo="datos",
+                                  sugerencia="Trabaja con una submuestra o divide los datos.")
     resumen = descriptiva.resumir(x)
+    caja = descriptiva.caja(x)
     q1, q3 = resumen.q1, resumen.q3
     iqr = q3 - q1
-    sesgo = float(stats.skew(x, bias=False)) if len(x) > 2 else 0.0
-    curtosis = float(stats.kurtosis(x, fisher=True, bias=False)) if len(x) > 3 else 0.0
+    # Con muy pocos datos (o sin variación) el sesgo y la curtosis no están
+    # definidos: se devuelve «sin dato» en lugar de un 0 que parecería simetría.
+    con_variacion = resumen.desviacion > 0
+    sesgo = float(stats.skew(x, bias=False)) if len(x) > 2 and con_variacion else None
+    curtosis = float(stats.kurtosis(x, fisher=True, bias=False)) if len(x) > 3 and con_variacion else None
     error_estandar = resumen.desviacion / math.sqrt(len(x))
     tcrit = float(stats.t.ppf(0.975, len(x) - 1)) if len(x) > 1 else 0.0
     ic = (resumen.media - tcrit * error_estandar, resumen.media + tcrit * error_estandar)
-    limite_inf, limite_sup = q1 - 1.5 * iqr, q3 + 1.5 * iqr
-    atipicos = x[(x < limite_inf) | (x > limite_sup)]
+    limite_inf, limite_sup = caja.valla_inferior, caja.valla_superior
+    atipicos = np.asarray(caja.atipicos, dtype=float)
+    avisos = _avisos_entrada()
+    if len(atipicos) > 80:
+        avisos.append(f"Hay {len(atipicos)} valores atípicos; se listan los 80 primeros.")
+    if len(resumen.modas) > 8:
+        avisos.append(f"Hay {len(resumen.modas)} valores empatados como moda; se muestran los 8 primeros.")
 
-    if sesgo > 0.5:
-        forma = "asimétrica a la derecha: la media supera a la mediana y la cola derecha es más larga."
+    if sesgo is None:
+        forma = ("La muestra es demasiado pequeña (o no varía) para valorar su forma."
+                 if con_variacion else "Todos los valores son iguales: no hay dispersión que describir.")
+    elif sesgo > 0.5:
+        forma = "Su distribución es asimétrica a la derecha: la media supera a la mediana y la cola derecha es más larga."
     elif sesgo < -0.5:
-        forma = "asimétrica a la izquierda: la media es menor que la mediana y la cola izquierda es más larga."
+        forma = "Su distribución es asimétrica a la izquierda: la media es menor que la mediana y la cola izquierda es más larga."
     else:
-        forma = "aproximadamente simétrica: media y mediana son cercanas."
-    if abs(curtosis) > 1:
-        forma += " La curtosis sugiere colas más pesadas (o más ligeras) que la normal." if curtosis > 0 else " La curtosis sugiere colas más ligeras que la normal."
+        forma = "Su distribución es aproximadamente simétrica: media y mediana son cercanas."
+    if curtosis is not None and abs(curtosis) > 1:
+        forma += (" El exceso de curtosis es positivo: colas más pesadas que las de una normal."
+                  if curtosis > 0 else
+                  " El exceso de curtosis es negativo: colas más ligeras que las de una normal.")
+    if len(x) < 20 and sesgo is not None:
+        forma += " Con menos de 20 datos, sesgo y curtosis son estimaciones muy inestables."
 
     # Histograma con regla de Freedman–Diaconis, acotada a un rango legible.
     if iqr > 0:
@@ -1037,7 +1247,8 @@ def api_descriptiva():
             "resumen": {
                 "media": _valor(resumen.media),
                 "mediana": _valor(resumen.mediana),
-                "modas": _valor(list(resumen.modas)),
+                "modas": _valor(list(resumen.modas)[:8]),
+                "n_modas": len(resumen.modas),
                 "q1": _valor(q1),
                 "q3": _valor(q3),
                 "minimo": _valor(resumen.minimo),
@@ -1052,6 +1263,7 @@ def api_descriptiva():
                 "suma": _valor(float(x.sum())),
                 "error_estandar": _valor(error_estandar),
                 "ic_media": [_valor(ic[0]), _valor(ic[1])],
+                "ic_nivel": 0.95,
             },
             "histograma": {
                 "bordes": [_valor(b) for b in bordes],
@@ -1061,15 +1273,20 @@ def api_descriptiva():
             "caja": {
                 "min": _valor(resumen.minimo), "q1": _valor(q1), "mediana": _valor(resumen.mediana),
                 "q3": _valor(q3), "max": _valor(resumen.maximo),
-                "bigote_inf": _valor(float(max(resumen.minimo, limite_inf))),
-                "bigote_sup": _valor(float(min(resumen.maximo, limite_sup))),
+                "bigote_inf": _valor(caja.bigote_inferior),
+                "bigote_sup": _valor(caja.bigote_superior),
+                "valla_inf": _valor(caja.valla_inferior),
+                "valla_sup": _valor(caja.valla_superior),
             },
+            "n_atipicos": int(len(atipicos)),
             "atipicos": _valor(np.sort(atipicos))[:80],
             "limites_atipicos": [_valor(limite_inf), _valor(limite_sup)],
             "frecuencias": _tabla(frec_vista, limite=60),
             "ordenados": [_valor(v) for v in ordenados],
-            "interpretacion": f"El conjunto tiene {resumen.n} observaciones y es {forma}",
-            "nota": "La desviación y la varianza usan la corrección muestral (n−1).",
+            "interpretacion": f"La muestra tiene {resumen.n} observaciones. {forma}",
+            "nota": ("La desviación y la varianza usan la corrección muestral (n−1). Los cuartiles usan "
+                     "interpolación lineal y los bigotes llegan al dato más extremo dentro de 1,5·IQR."),
+            "avisos": avisos,
         }
     )
 
@@ -1102,7 +1319,10 @@ def api_combinatoria():
             etiqueta = f"C({n}, {k})"
             pasos = [f"Eligen {k} elementos de {n}; el orden no importa y no hay repetición."]
     elif tipo == "permutaciones_repetidas":
-        conteos = [_entero(v, "conteos") for v in (datos.get("conteos") or [])]
+        crudos = datos.get("conteos")
+        if _vacio(crudos) and not isinstance(crudos, (list, tuple)):
+            raise ErrorPeticion("Indica los tamaños de cada grupo.", campo="conteos")
+        conteos = [_entero(v, "conteos") for v in _lectura(crudos, "conteos", minimo=1, maximo=1000).valores]
         valor = combinatoria.permutaciones_repetidas(conteos)
         total = sum(conteos)
         denominador = r" \cdot ".join(str(c) + "!" for c in conteos)
@@ -1110,44 +1330,58 @@ def api_combinatoria():
         etiqueta = f"Permutaciones de {total} elementos"
         pasos = [f"Total de elementos: {total}; grupos indistinguibles: {', '.join(map(str, conteos))}."]
     else:
-        raise ValueError("Tipo de cálculo combinatorio desconocido.")
-    return jsonify(
-        {
-            "tipo": tipo,
-            "resultado": str(valor),
-            "etiqueta": etiqueta,
-            "formula": formula,
-            "pasos": pasos,
-            "digitos": len(str(valor)),
-        }
-    )
+        raise ErrorPeticion("Tipo de cálculo combinatorio desconocido.", campo="tipo")
+    aproximado = isinstance(valor, combinatoria.Magnitud)
+    respuesta = {
+        "tipo": tipo,
+        "resultado": str(valor),
+        "etiqueta": etiqueta,
+        "formula": formula,
+        "pasos": pasos,
+        "digitos": valor.digitos if aproximado else len(str(valor)),
+        "exacto": not aproximado,
+    }
+    if aproximado:
+        respuesta["mantisa"] = valor.mantisa
+        respuesta["exponente"] = valor.exponente
+        respuesta["nota"] = (
+            f"El resultado tiene {valor.digitos:,} cifras".replace(",", "\u202f") +
+            f" (más de {combinatoria.MAX_DIGITOS:,}".replace(",", "\u202f") +
+            "): se muestra su orden de magnitud con 10 decimales en lugar del entero completo.")
+    return jsonify(respuesta)
 
 
 @app.post("/api/probabilidad/condicional")
 def api_condicional():
     datos = _cuerpo()
-    interseccion = _numero(datos.get("interseccion"), "P(A ∩ B)")
-    condicion = _numero(datos.get("condicion"), "P(B)")
-    for etiqueta, valor_p in (("P(A ∩ B)", interseccion), ("P(B)", condicion)):
+    interseccion = _racional(datos.get("interseccion"), "P(A ∩ B)", "interseccion")
+    condicion = _racional(datos.get("condicion"), "P(B)", "condicion")
+    for etiqueta, valor_p, campo in (("P(A ∩ B)", interseccion, "interseccion"), ("P(B)", condicion, "condicion")):
         if not 0 <= valor_p <= 1:
-            raise ValueError(f"{etiqueta} debe estar entre 0 y 1.")
-    if condicion <= 0:
-        raise ValueError("P(B) debe ser mayor que 0.")
-    if interseccion > condicion + 1e-12:
-        raise ValueError("P(A ∩ B) no puede superar P(B).")
+            raise ParametroInvalidoError(f"{etiqueta} debe estar entre 0 y 1.", campo=campo)
+    pa = None if _vacio(datos.get("pa")) else _racional(datos.get("pa"), "P(A)", "pa")
+    exacto = all(isinstance(v, Fraction) for v in (interseccion, condicion) + (() if pa is None else (pa,)))
+    if not exacto:  # una sola aritmética: o todo fracciones, o todo decimales
+        interseccion, condicion = float(interseccion), float(condicion)
+        pa = None if pa is None else float(pa)
     valor = prob.condicional(interseccion, condicion)
-    pa = _numero(datos.get("pa"), "P(A)", defecto=None) if datos.get("pa") not in (None, "") else None
-    pb = condicion
     independencia = None
     if pa is not None:
+        if not 0 <= pa <= 1:
+            raise ParametroInvalidoError("P(A) debe estar entre 0 y 1.", campo="pa")
         independencia = {
-            "independientes": bool(prob.independientes(pa, pb, interseccion)),
-            "producto": _valor(pa * pb),
+            "independientes": bool(prob.independientes(pa, condicion, interseccion)),
+            "producto": _valor(pa * condicion),
+            "producto_exacto": _fraccion_texto(pa * condicion),
             "interseccion": _valor(interseccion),
+            "criterio": ("comparación exacta de fracciones" if exacto else
+                         f"|P(A∩B) − P(A)·P(B)| ≤ {prob.TOLERANCIA:g}"),
         }
+    factor = (valor / pa) if pa else None
     return jsonify(
         {
             "resultado": _valor(valor),
+            "resultado_exacto": _fraccion_texto(valor),
             "formula": r"P(A\mid B)=\frac{P(A\cap B)}{P(B)}",
             "detalle": {
                 "interseccion": _valor(interseccion),
@@ -1155,11 +1389,26 @@ def api_condicional():
                 "pa": _valor(pa) if pa is not None else None,
                 "pb": _valor(condicion),
                 "condicional_inversa": _valor(interseccion / pa) if pa else None,
+                "condicional_inversa_exacta": _fraccion_texto(interseccion / pa) if pa else None,
             },
             "independencia": independencia,
-            "interpretacion": f"Saber que ocurrió B multiplica la probabilidad de A por {valor / pa:.3g}." if pa else "Se ha normalizado la probabilidad conjunta por P(B).",
+            "interpretacion": (
+                f"Saber que ocurrió B multiplica la probabilidad de A por {_fmt_compacto(round(float(factor), 6))}."
+                if pa else "Se ha normalizado la probabilidad conjunta por P(B)."),
+            "avisos": _avisos_entrada(),
         }
     )
+
+
+def _fraccion_texto(valor) -> str | None:
+    """Forma exacta «a/b» de un resultado racional (None si se calculó en decimales)."""
+    if not isinstance(valor, Fraction):
+        return None
+    if valor.denominator == 1:
+        return str(valor.numerator)
+    if valor.denominator > 10**12:
+        return None
+    return f"{valor.numerator}/{valor.denominator}"
 
 
 @app.post("/api/probabilidad/bayes")
@@ -1167,29 +1416,47 @@ def api_bayes():
     datos = _cuerpo()
     hipotesis = datos.get("hipotesis")
     if not isinstance(hipotesis, list) or len(hipotesis) < 2:
-        raise ValueError("Añade al menos dos hipótesis con su probabilidad previa y su verosimilitud.")
+        raise ErrorPeticion("Añade al menos dos hipótesis con su probabilidad previa y su verosimilitud.",
+                            campo="hipotesis")
     priores, verosimilitudes, nombres = [], [], []
     for i, fila in enumerate(hipotesis, start=1):
         if not isinstance(fila, dict):
-            raise ValueError(f"La fila {i} no es válida.")
+            raise ErrorPeticion(f"La fila {i} no es válida.", campo="hipotesis")
         nombres.append(str(fila.get("nombre") or f"Hipótesis {i}").strip()[:60])
-        prior = _numero(fila.get("prior"), f"prior de {nombres[-1]}")
-        verosimilitud = _numero(fila.get("likelihood"), f"verosimilitud de {nombres[-1]}")
+        prior = _racional(fila.get("prior"), f"prior de {nombres[-1]}", f"hipotesis.{i - 1}.prior")
+        verosimilitud = _racional(fila.get("likelihood"), f"verosimilitud de {nombres[-1]}",
+                                  f"hipotesis.{i - 1}.likelihood")
         if not 0 <= prior <= 1:
-            raise ValueError(f"El prior de {nombres[-1]} debe estar entre 0 y 1.")
+            raise ParametroInvalidoError(f"El prior de {nombres[-1]} debe estar entre 0 y 1.",
+                                         campo=f"hipotesis.{i - 1}.prior")
         if not 0 <= verosimilitud <= 1:
-            raise ValueError(f"La verosimilitud de {nombres[-1]} debe estar entre 0 y 1.")
+            raise ParametroInvalidoError(f"La verosimilitud de {nombres[-1]} debe estar entre 0 y 1.",
+                                         campo=f"hipotesis.{i - 1}.likelihood")
         priores.append(prior)
         verosimilitudes.append(verosimilitud)
-    if not math.isclose(sum(priores), 1, abs_tol=1e-6):
-        raise ValueError(f"Las probabilidades previas deben sumar 1 (suman {sum(priores):.4g}).")
+    exacto = all(isinstance(v, Fraction) for v in (*priores, *verosimilitudes))
+    if exacto and sum(priores, Fraction(0)) != 1:
+        # Decimales redondeados (0,333333333333 × 3): no suman 1 exactamente; se
+        # pasa a coma flotante y decide la tolerancia documentada.
+        exacto = False
+    if not exacto:
+        priores, verosimilitudes = [float(v) for v in priores], [float(v) for v in verosimilitudes]
+    if not prob.suma_uno(priores):
+        suma = float(sum(priores))
+        raise ParametroInvalidoError(
+            f"Las probabilidades previas deben sumar 1 (suman {_fmt_suma(suma)}).",
+            campo="hipotesis",
+            sugerencia="Si son tercios o séptimos, escríbelas como fracción (por ejemplo 1/3).")
     total = prob.probabilidad_total(priores, verosimilitudes)
     if total <= 0:
-        raise ValueError("La evidencia tiene probabilidad cero: revisa las verosimilitudes.")
+        raise ParametroInvalidoError("La evidencia tiene probabilidad cero: revisa las verosimilitudes.",
+                                     campo="hipotesis")
     posteriores = [prob.bayes(i, priores, verosimilitudes) for i in range(len(priores))]
     return jsonify(
         {
             "total": _valor(total),
+            "total_exacto": _fraccion_texto(total),
+            "exacto": exacto,
             "formula": r"P(B_i\mid A)=\frac{P(B_i)P(A\mid B_i)}{\sum_j P(B_j)P(A\mid B_j)}",
             "filas": [
                 {
@@ -1198,6 +1465,7 @@ def api_bayes():
                     "likelihood": _valor(v),
                     "conjunta": _valor(p * v),
                     "posterior": _valor(post),
+                    "posterior_exacto": _fraccion_texto(post),
                 }
                 for n, p, v, post in zip(nombres, priores, verosimilitudes, posteriores)
             ],
@@ -1209,35 +1477,50 @@ def api_bayes():
 @app.post("/api/probabilidad/variable")
 def api_variable():
     datos = _cuerpo()
-    valores = _serie(datos.get("valores"), "valores", minimo=1)
-    masas = _serie(datos.get("masas"), "masas", minimo=1)
-    if len(valores) != len(masas):
-        raise ValueError("Cada valor necesita su probabilidad (mismo número de filas).")
-    if np.any(masas < 0) or np.any(masas > 1):
-        raise ValueError("Cada masa de probabilidad debe estar entre 0 y 1.")
-    suma = float(masas.sum())
-    if not math.isclose(suma, 1.0, abs_tol=1e-6):
-        raise ValueError(f"Las probabilidades deben sumar 1 (suman {suma:.6g}).")
-    esperanza = prob.esperanza(valores, masas)
-    varianza = prob.varianza(valores, masas)
+    valores_l = _lectura(datos.get("valores"), "valores", minimo=1, fraccion=True).valores
+    masas_l = _lectura(datos.get("masas"), "masas", minimo=1, fraccion=True).valores
+    if len(valores_l) != len(masas_l):
+        raise ParametroInvalidoError(
+            f"Cada valor necesita su probabilidad (hay {len(valores_l)} valores y {len(masas_l)} probabilidades).",
+            campo="masas")
+    if any(m < 0 or m > 1 for m in masas_l):
+        raise ParametroInvalidoError("Cada masa de probabilidad debe estar entre 0 y 1.", campo="masas")
+    if not all(isinstance(m, Fraction) for m in masas_l) or sum(masas_l, Fraction(0)) != 1:
+        # Sin suma exacta (decimales redondeados) se trabaja en coma flotante con tolerancia.
+        masas_l = [float(m) for m in masas_l]
+    if not prob.suma_uno(masas_l):
+        suma = float(sum(masas_l))
+        raise ParametroInvalidoError(
+            f"Las probabilidades deben sumar 1 (suman {_fmt_suma(suma)}).", campo="masas",
+            sugerencia="Si son tercios o séptimos, escríbelas como fracción (por ejemplo 1/3).")
+    # Los valores decimales exactos (0,5; 2; 1/3) se pasan a fracción para dar formas exactas.
+    valores_exactos = [v if isinstance(v, Fraction) else Fraction(repr(v)) for v in valores_l]
+    exactos = prob.momentos_exactos(valores_exactos, masas_l) if all(isinstance(m, Fraction) for m in masas_l) else None
+    valores = np.asarray([float(v) for v in valores_l], dtype=float)
+    masas = np.asarray([float(m) for m in masas_l], dtype=float)
+    esperanza = prob.esperanza(valores_l, masas_l)
+    varianza = prob.varianza(valores_l, masas_l)
     segundo = float((valores ** 2) @ masas)
-    t = datos.get("t")
     mgf = None
-    if t not in (None, ""):
-        t_num = _numero(t, "t")
-        mgf = _valor(prob.generadora_momentos(t_num, valores, masas))
+    if not _vacio(datos.get("t")):
+        mgf = _valor(prob.generadora_momentos(_numero(datos.get("t"), "t"), valores_l, masas_l))
+    desviacion = math.sqrt(max(0.0, varianza))
     return jsonify(
         {
             "esperanza": _valor(esperanza),
             "varianza": _valor(varianza),
-            "desviacion": _valor(math.sqrt(max(0.0, varianza))),
+            "esperanza_exacta": _fraccion_texto(exactos[0]) if exactos else None,
+            "varianza_exacta": _fraccion_texto(exactos[1]) if exactos else None,
+            "desviacion": _valor(desviacion),
             "segundo_momento": _valor(segundo),
             "mgf": mgf,
             "formula": r"E[X]=\sum_i x_ip_i,\qquad \operatorname{Var}(X)=E[X^2]-E[X]^2",
             "distribucion": [
                 {"x": _valor(x), "p": _valor(p)} for x, p in zip(valores, masas)
             ],
-            "interpretacion": f"El valor esperado es {esperanza:.6g} y la dispersión típica alrededor de él es {math.sqrt(max(0.0, varianza)):.6g}.",
+            "interpretacion": (f"El valor esperado es {_fmt_compacto(esperanza)} y la dispersión típica "
+                               f"alrededor de él es {_fmt_compacto(desviacion)}."),
+            "avisos": _avisos_entrada(),
         }
     )
 
@@ -1246,123 +1529,134 @@ def api_variable():
 # Inferencia
 # ---------------------------------------------------------------------------
 
-def _curva_prueba(prueba: str, resultado, alfa: float, alternativa: str):
-    """Genera la curva nula, los valores críticos y la región de rechazo."""
-    familia, params, gl = None, {}, resultado.gl
-    if prueba in {"z_una", "z_dos", "prop_una", "prop_dos", "mann_whitney", "wilcoxon", "kruskal"}:
-        familia, dist = "normal", stats.norm
-    elif prueba in {"t_una", "t_dos", "correlacion"}:
-        df = gl if gl else 1
-        familia, dist = "t", stats.t(df=df)
-        params = {"gl": df}
-    elif prueba in {"chi_indep", "chi_bondad"}:
-        df = gl if gl else 1
-        familia, dist = "chi2", stats.chi2(df=df)
-        params = {"gl": df}
-    elif prueba == "anova":
-        gl_res = (resultado.detalles or {}).get("gl_residual")
-        if not gl_res:
-            return None
-        familia, dist = "f", stats.f(dfn=resultado.gl or 1, dfd=gl_res)
-        params = {"gl1": resultado.gl, "gl2": gl_res}
-    else:
+_FAMILIAS_NULAS = {
+    "normal": lambda n: stats.norm,
+    "t": lambda n: stats.t(df=n["gl"]),
+    "chi2": lambda n: stats.chi2(df=n["gl"]),
+    "f": lambda n: stats.f(dfn=n["gl"], dfd=n["gl2"]),
+}
+
+
+def _curva_prueba(resultado):
+    """Curva nula, valores críticos y región de rechazo a partir de ``resultado.nula``.
+
+    La curva se dibuja **solo** con la distribución con la que el motor calculó
+    el p-valor.  Así el marcador del estadístico cae en la zona de rechazo si y
+    solo si la prueba rechaza H₀.  Las pruebas exactas no tienen curva.
+    """
+    nula = resultado.nula
+    if not nula or nula["familia"] not in _FAMILIAS_NULAS:
         return None
+    alfa = resultado.alfa
     try:
-        bajo, alto = dist.ppf(1e-5), dist.ppf(1 - 1e-5)
-        if not np.isfinite(bajo) or not np.isfinite(alto) or bajo >= alto:
+        dist = _FAMILIAS_NULAS[nula["familia"]](nula)
+        est = float(nula["estadistico"])
+        bajo, alto = float(dist.ppf(1e-5)), float(dist.ppf(1 - 1e-5))
+        if not math.isfinite(bajo) or not math.isfinite(alto) or bajo >= alto:
             return None
-        xs = np.linspace(float(bajo), float(alto), 220)
+        # El eje se amplía para que el estadístico sea visible, salvo que quede tan
+        # lejos que la curva se reduciría a una aguja ilegible: entonces se dibuja
+        # el cuerpo de la distribución y la interfaz indica que el estadístico
+        # cae fuera del rango mostrado.
+        ancho = alto - bajo
+        margen = 0.06 * ancho
+        visible = bajo - 1.5 * ancho <= est <= alto + 1.5 * ancho
+        if nula["familia"] in {"chi2", "f"}:
+            bajo = max(0.0, bajo)
+            if visible:
+                alto = max(alto, est + margen)
+        elif visible:
+            bajo, alto = min(bajo, est - margen), max(alto, est + margen)
+        xs = np.linspace(bajo, alto, 240)
         ys = dist.pdf(xs)
-        if alternativa == "less":
-            critico_bajo, critico_alto = float(dist.ppf(alfa)), None
-            region = "izquierda"
-        elif alternativa == "greater" or familia in {"chi2", "f"}:
-            critico_bajo, critico_alto = None, float(dist.ppf(1 - alfa))
-            region = "derecha"
+        if nula["familia"] in {"chi2", "f"} and not math.isfinite(float(ys[0])):
+            xs = xs[1:]
+            ys = ys[1:]
+        cola = nula["cola"]
+        if cola == "izquierda":
+            critico_bajo, critico_alto, region = float(dist.ppf(alfa)), None, "izquierda"
+        elif cola == "derecha":
+            critico_bajo, critico_alto, region = None, float(dist.isf(alfa)), "derecha"
         else:
-            critico_bajo, critico_alto = float(dist.ppf(alfa / 2)), float(dist.ppf(1 - alfa / 2))
-            region = "bilateral"
+            critico_bajo, critico_alto, region = float(dist.ppf(alfa / 2)), float(dist.isf(alfa / 2)), "bilateral"
+        en_rechazo = ((critico_bajo is not None and est < critico_bajo) or
+                      (critico_alto is not None and est > critico_alto))
+        if en_rechazo != resultado.rechaza:
+            # Solo puede ocurrir por redondeo exactamente en la frontera; se prefiere
+            # no dibujar a dibujar una figura que contradiga el veredicto.
+            log.warning("Curva incoherente con la decisión en %s; se omite.", resultado.metodo)
+            return None
+        parametros = {}
+        if nula["gl"] is not None:
+            parametros["gl1" if nula["familia"] == "f" else "gl"] = nula["gl"]
+        if nula["gl2"] is not None:
+            parametros["gl2"] = nula["gl2"]
         return {
             "x": [_valor(v) for v in xs],
             "y": [_valor(v) for v in ys],
-            "familia": familia,
-            "parametros": _valor(params),
-            "estadistico": _valor(resultado.estadistico),
-            "critico_bajo": _valor(critico_bajo) if critico_bajo is not None else None,
-            "critico_alto": _valor(critico_alto) if critico_alto is not None else None,
+            "familia": nula["familia"],
+            "parametros": _valor(parametros),
+            "estadistico": _valor(est),
+            "etiqueta": nula["etiqueta"],
+            "aproximada": bool(nula["aproximada"]),
+            "critico_bajo": _valor(critico_bajo),
+            "critico_alto": _valor(critico_alto),
             "region": region,
         }
-    except Exception:  # noqa: BLE001
+    except (ValueError, FloatingPointError, KeyError, TypeError):
+        log.exception("No se pudo generar la curva nula de %s", resultado.metodo)
         return None
 
 
-def _extras_prueba(prueba: str, datos: dict) -> dict:
-    """Calcula tamaños de efecto y metadatos didácticos adicionales."""
-    extra: dict = {}
-    try:
-        if prueba in {"t_una", "z_una"}:
-            x = _serie(datos.get("datos"), "datos")
-            mu0 = _numero(datos.get("mu0"), "mu0")
-            s = float(np.std(x, ddof=1))
-            extra["d_cohen"] = _valor((float(np.mean(x)) - mu0) / s) if s else None
-            extra["n"] = len(x)
-            extra["media_muestral"] = _valor(float(np.mean(x)))
-        elif prueba in {"t_dos", "z_dos", "mann_whitney", "wilcoxon"}:
-            a = _serie(datos.get("datos"), "datos")
-            b = _serie(datos.get("datos2"), "datos2")
-            extra["n1"], extra["n2"] = len(a), len(b)
-            extra["medias"] = [_valor(float(np.mean(a))), _valor(float(np.mean(b)))]
-            if prueba in {"t_dos", "z_dos"}:
-                sa, sb = float(np.var(a, ddof=1)), float(np.var(b, ddof=1))
-                sp = math.sqrt(((len(a) - 1) * sa + (len(b) - 1) * sb) / max(1, len(a) + len(b) - 2))
-                extra["d_cohen"] = _valor((float(np.mean(a)) - float(np.mean(b))) / sp) if sp else None
-        elif prueba in {"prop_una", "prop_dos"}:
-            if prueba == "prop_una":
-                extra["n"] = _entero(datos.get("n"), "n")
-                extra["proporcion"] = _valor(_entero(datos.get("exitos"), "exitos") / extra["n"])
-            else:
-                n1, n2 = _entero(datos.get("n1"), "n1"), _entero(datos.get("n2"), "n2")
-                extra["n1"], extra["n2"] = n1, n2
-                extra["proporciones"] = [_valor(_entero(datos.get("x1"), "x1") / n1), _valor(_entero(datos.get("x2"), "x2") / n2)]
-        elif prueba == "correlacion":
-            x = _serie(datos.get("x"), "x", minimo=3)
-            y = _serie(datos.get("y"), "y", minimo=3)
-            r = float(stats.pearsonr(x, y).statistic) if datos.get("metodo", "pearson") == "pearson" else float(stats.spearmanr(x, y).statistic)
-            extra["r"] = _valor(r)
-            extra["r2"] = _valor(r * r)
-        elif prueba == "anova":
-            grupos = _grupos(datos.get("grupos"))
-            todos = np.concatenate(grupos)
-            ss_total = float(((todos - todos.mean()) ** 2).sum())
-            ss_entre = sum(len(g) * (float(np.mean(g)) - float(todos.mean())) ** 2 for g in grupos)
-            extra["eta2"] = _valor(ss_entre / ss_total) if ss_total else None
-            extra["k"], extra["n"] = len(grupos), len(todos)
-        elif prueba == "kruskal":
-            extra["k"] = len(_grupos(datos.get("grupos")))
-    except Exception:  # noqa: BLE001 - los extras nunca deben romper la prueba
-        pass
-    return extra
+def _hipotesis(spec: dict, resultado, datos: dict) -> dict:
+    """H₀ y H₁ tal como se contrastaron (con la alternativa y los valores reales)."""
+    h0 = spec.get("h0")
+    h1 = (spec.get("h1_alternativas") or {}).get(resultado.alternativa or "", spec.get("h1"))
+    sustituciones = {}
+    if spec.get("clave") in {"t_una", "z_una"} and not _vacio(datos.get("mu0")):
+        sustituciones["μ₀"] = _fmt_compacto(_numero(datos.get("mu0"), "mu0"))
+    if spec.get("clave") == "prop_una" and not _vacio(datos.get("p0")):
+        sustituciones["p₀"] = _fmt_compacto(_numero(datos.get("p0"), "p0"))
+    for simbolo, valor in sustituciones.items():
+        h0, h1 = h0.replace(simbolo, valor), h1.replace(simbolo, valor)
+    return {"h0": h0, "h1": h1}
+
+
+_ETIQUETAS_ALTERNATIVA = {"two-sided": "bilateral", "less": "unilateral izquierda", "greater": "unilateral derecha"}
 
 
 @app.post("/api/inferencia")
 def api_inferencia():
     datos = _cuerpo()
     prueba = _texto(datos.get("prueba"), "prueba")
+    spec = next((p for p in CATALOGO_PRUEBAS if p["clave"] == prueba), None)
+    if spec is None:
+        raise ErrorPeticion(f"Prueba desconocida: «{prueba}».", campo="prueba")
     alfa = _numero(datos.get("alfa"), "alfa", 0.05)
-    validar_nivel(alfa)
+    try:
+        validar_nivel(alfa)
+    except ErrorAmPu as exc:
+        raise exc.con_campo("alfa")
     alternativa = datos.get("alternativa") or "two-sided"
-    if alternativa not in {"two-sided", "less", "greater"}:
-        raise ValueError("La alternativa debe ser bilateral, menor o mayor.")
+    if alternativa not in inf.ALTERNATIVAS:
+        raise ErrorPeticion("La alternativa debe ser bilateral, menor o mayor.", campo="alternativa")
+    if not spec.get("admite_alternativa") and alternativa != "two-sided":
+        raise ParametroInvalidoError(
+            f"«{spec['nombre']}» no admite una alternativa unilateral: contrasta cualquier diferencia.",
+            campo="alternativa", sugerencia="Quita la alternativa o elige una prueba con dirección.")
+
+    def serie(nombre, minimo=2):
+        return _serie(datos.get(nombre), nombre, minimo=minimo)
 
     if prueba == "t_una":
-        resultado = inf.t_una_muestra(_serie(datos.get("datos")), _numero(datos.get("mu0"), "mu0"), alfa, alternativa)
+        resultado = inf.t_una_muestra(serie("datos"), _numero(datos.get("mu0"), "mu0"), alfa, alternativa)
     elif prueba == "z_una":
-        resultado = inf.z_una_muestra(_serie(datos.get("datos")), _numero(datos.get("mu0"), "mu0"),
+        resultado = inf.z_una_muestra(serie("datos"), _numero(datos.get("mu0"), "mu0"),
                                       _numero(datos.get("sigma"), "sigma"), alfa, alternativa)
     elif prueba == "t_dos":
-        resultado = inf.t_dos_muestras(_serie(datos.get("datos")), _serie(datos.get("datos2")), alfa, alternativa)
+        resultado = inf.t_dos_muestras(serie("datos"), serie("datos2"), alfa, alternativa)
     elif prueba == "z_dos":
-        resultado = inf.z_dos_muestras(_serie(datos.get("datos")), _serie(datos.get("datos2")),
+        resultado = inf.z_dos_muestras(serie("datos"), serie("datos2"),
                                        _numero(datos.get("sigma_a"), "sigma_a"),
                                        _numero(datos.get("sigma_b"), "sigma_b"), alfa, alternativa)
     elif prueba == "prop_una":
@@ -1375,8 +1669,7 @@ def api_inferencia():
         )
     elif prueba == "chi_bondad":
         resultado = inf.chi_bondad(
-            _serie(datos.get("observadas"), "observadas", minimo=2),
-            _serie(datos.get("esperadas"), "esperadas", minimo=2),
+            serie("observadas"), serie("esperadas"),
             alfa, _entero(datos.get("parametros_estimados"), "parametros_estimados", 0),
         )
     elif prueba == "chi_indep":
@@ -1385,27 +1678,13 @@ def api_inferencia():
         resultado = inf.anova(_grupos(datos.get("grupos")), alfa)
     elif prueba == "correlacion":
         metodo = datos.get("metodo") or "pearson"
-        resultado = inf.correlacion(_serie(datos.get("x"), "x", minimo=3), _serie(datos.get("y"), "y", minimo=3), metodo, alfa)
+        resultado = inf.correlacion(serie("x", 3), serie("y", 3), metodo, alfa, alternativa)
     elif prueba == "mann_whitney":
-        resultado = inf.mann_whitney(_serie(datos.get("datos")), _serie(datos.get("datos2")), alfa)
+        resultado = inf.mann_whitney(serie("datos"), serie("datos2"), alfa, alternativa)
     elif prueba == "wilcoxon":
-        resultado = inf.wilcoxon(_serie(datos.get("datos")), _serie(datos.get("datos2")), alfa)
-    elif prueba == "kruskal":
-        resultado = inf.kruskal(_grupos(datos.get("grupos")), alfa)
+        resultado = inf.wilcoxon(serie("datos"), serie("datos2"), alfa, alternativa)
     else:
-        raise ValueError(f"Prueba desconocida: «{prueba}».")
-
-    spec = next((p for p in CATALOGO_PRUEBAS if p["clave"] == prueba), {})
-    avisos = []
-    detalles = resultado.detalles or {}
-    if detalles.get("advertencia"):
-        avisos.append(detalles["advertencia"])
-    if prueba in {"prop_una", "prop_dos"}:
-        n = detalles.get("n") or (detalles.get("n1", 0) + detalles.get("n2", 1))
-        if n and n < 30:
-            avisos.append("Con muestras pequeñas, la aproximación normal de la prueba z puede ser imprecisa.")
-    if prueba in {"t_una", "t_dos"}:
-        avisos.append("La prueba t asume observaciones independientes y normalidad aproximada de la media; revisa valores atípicos.")
+        resultado = inf.kruskal(_grupos(datos.get("grupos")), alfa)
 
     return jsonify(
         {
@@ -1413,20 +1692,27 @@ def api_inferencia():
             "nombre": spec.get("nombre", prueba),
             "metodo": resultado.metodo,
             "estadistico": _valor(resultado.estadistico),
+            "simbolo": resultado.simbolo,
             "p_valor": _valor(resultado.p_valor),
+            "p_texto": inf.formatear_p(resultado.p_valor),
+            "exacta": resultado.exacta,
             "alfa": alfa,
             "gl": _valor(resultado.gl),
             "intervalo": _valor(resultado.intervalo),
+            "intervalo_de": resultado.intervalo_de,
+            "intervalo_nivel": round(1 - alfa, 12),
             "conclusion": resultado.conclusion,
-            "rechaza": bool(resultado.p_valor < alfa),
-            "detalles": _valor(detalles),
-            "extras": _extras_prueba(prueba, datos),
-            "avisos": avisos,
-            "hipotesis": {"h0": spec.get("h0"), "h1": spec.get("h1")},
+            "rechaza": bool(resultado.rechaza),
+            "detalles": _valor(resultado.detalles),
+            "extras": _valor(resultado.extras),
+            "avisos": [*_avisos_entrada(), *resultado.avisos],
+            "hipotesis": _hipotesis(spec, resultado, datos),
             "supuestos": spec.get("supuestos"),
             "teoria": spec.get("teoria"),
-            "curva": _curva_prueba(prueba, resultado, alfa, alternativa),
-            "alternativa": alternativa,
+            "curva": _curva_prueba(resultado),
+            "alternativa": resultado.alternativa,
+            "alternativa_texto": _ETIQUETAS_ALTERNATIVA.get(resultado.alternativa or "", None),
+            "admite_alternativa": bool(spec.get("admite_alternativa")),
         }
     )
 
@@ -1437,62 +1723,36 @@ def api_inferencia():
 
 def _parse_predictores(valor, n: int) -> np.ndarray:
     """Acepta una serie, una lista plana o una matriz escrita por filas."""
-    if isinstance(valor, (list, tuple)):
-        filas = list(valor)
-        if filas and not isinstance(filas[0], (list, tuple)):
-            filas = [[v] for v in filas]
-    else:
-        filas = []
-        for linea in str(valor or "").strip().splitlines():
-            linea = linea.strip()
-            if linea:
-                filas.append([c for c in re.split(r"[\s,;]+", linea) if c])
-    if not filas:
-        raise ValueError("Faltan los predictores X.")
-    try:
-        matriz = np.asarray([[float(str(c).replace(",", ".")) for c in fila] for fila in filas], dtype=float)
-    except (TypeError, ValueError) as exc:
-        raise ValueError("Los predictores X deben ser numéricos (una fila por observación).") from exc
-    if matriz.ndim == 1:
-        matriz = matriz.reshape(-1, 1)
-    elif matriz.shape[0] == 1 and matriz.shape[1] == n:
+    if _vacio(valor) and not isinstance(valor, (list, tuple)):
+        raise ErrorPeticion("Faltan los predictores X.", campo="x")
+    valor = _json_si_procede(valor, "x")
+    if isinstance(valor, (list, tuple)) and valor and not isinstance(valor[0], (list, tuple, str)):
+        valor = [[v] for v in valor]
+    filas = entrada.leer_matriz(valor, "x", rectangular=True)
+    matriz = np.asarray(filas, dtype=float)
+    if matriz.shape[0] == 1 and matriz.shape[1] == n:
         # Una sola línea con todos los valores: es un predictor, no una fila.
         matriz = matriz.reshape(-1, 1)
-    if matriz.ndim != 2 or matriz.shape[0] != n:
-        raise ValueError(f"X debe tener {n} filas, una por cada valor de Y (ahora tiene {matriz.shape[0] if matriz.ndim else 0}).")
-    if not np.all(np.isfinite(matriz)):
-        raise ValueError("X contiene valores no finitos.")
+    if matriz.shape[0] != n:
+        raise ParametroInvalidoError(
+            f"X debe tener {n} filas, una por cada valor de Y (ahora tiene {matriz.shape[0]}).", campo="x",
+            sugerencia="Escribe una observación por línea, con sus predictores separados por espacios.")
     return matriz
 
 
 def _parse_predicciones(valor, p: int) -> np.ndarray:
     """Acepta una o varias filas de predictores para predecir."""
-    if isinstance(valor, (list, tuple)):
-        filas = list(valor)
-        if filas and not isinstance(filas[0], (list, tuple)):
-            plana = [float(str(v).replace(",", ".")) for v in filas]
-            if len(plana) % p:
-                raise ValueError(f"Cada fila de predicción necesita {p} valores.")
-            filas = [plana[i:i + p] for i in range(0, len(plana), p)]
-    else:
-        filas = []
-        for linea in str(valor or "").strip().splitlines():
-            linea = linea.strip()
-            if linea:
-                filas.append([c for c in re.split(r"[\s,;]+", linea) if c])
-    if not filas:
-        raise ValueError("La predicción está vacía.")
-    try:
-        matriz = np.asarray([[float(str(c).replace(",", ".")) for c in fila] for fila in filas], dtype=float)
-    except (TypeError, ValueError) as exc:
-        raise ValueError("Las predicciones deben ser numéricas.") from exc
-    if matriz.ndim == 1:
-        matriz = matriz.reshape(1, -1)
-    if matriz.shape[1] != p:
-        raise ValueError(f"Cada fila de predicción debe tener {p} predictor{'es' if p != 1 else ''}.")
-    if not np.all(np.isfinite(matriz)):
-        raise ValueError("La predicción contiene valores no finitos.")
-    return matriz
+    valor = _json_si_procede(valor, "predecir")
+    if isinstance(valor, (list, tuple)) and valor and not isinstance(valor[0], (list, tuple, str)):
+        plana = entrada.leer_serie(list(valor), "predecir").valores
+        if len(plana) % p:
+            raise ParametroInvalidoError(f"Cada fila de predicción necesita {p} valores.", campo="predecir")
+        valor = [plana[i:i + p] for i in range(0, len(plana), p)]
+    filas = entrada.leer_matriz(valor, "predecir", rectangular=False)
+    if any(len(f) != p for f in filas):
+        raise ParametroInvalidoError(
+            f"Cada fila de predicción debe tener {p} predictor{'es' if p != 1 else ''}.", campo="predecir")
+    return np.asarray(filas, dtype=float)
 
 
 @app.post("/api/regresion")
@@ -1501,12 +1761,17 @@ def api_regresion():
     y = _serie(datos.get("y"), "y", minimo=3)
     x = _parse_predictores(datos.get("x"), len(y))
     confianza = _numero(datos.get("confianza"), "confianza", 0.95)
-    validar_nivel(confianza)
+    try:
+        validar_nivel(confianza)
+    except ErrorAmPu as exc:
+        raise exc.con_campo("confianza")
+    alfa = round(1 - confianza, 12)
     nombres = datos.get("nombres")
     if isinstance(nombres, str):
-        nombres = [n.strip() for n in nombres.split(",") if n.strip()]
+        nombres = [n.strip() for n in re.split(r"[,;]", nombres) if n.strip()]
     if nombres and len(nombres) != x.shape[1]:
-        raise ValueError(f"Indica {x.shape[1]} nombres de predictor o deja el campo vacío.")
+        raise ParametroInvalidoError(
+            f"Indica {x.shape[1]} nombres de predictor o deja el campo vacío.", campo="nombres")
     if x.shape[1] == 1:
         resultado = reg.lineal_simple(x[:, 0], y, confianza)
     else:
@@ -1515,8 +1780,8 @@ def api_regresion():
     beta = np.asarray(resultado.coeficientes, dtype=float)
     inferiores = np.asarray(resultado.intervalos, dtype=float)[:, 0]
     superiores = np.asarray(resultado.intervalos, dtype=float)[:, 1]
-    tcrit = float(stats.t.ppf((1 + confianza) / 2, resultado.gl))
-    errores = (superiores - inferiores) / (2 * tcrit)
+    errores = np.asarray(resultado.errores, dtype=float)
+    diag = resultado.diagnostico or {}
     diseño = np.column_stack([np.ones(len(y)), x])
     y_hat = diseño @ beta
     residuos = y - y_hat
@@ -1535,7 +1800,7 @@ def api_regresion():
             "ic_inferior": _valor(inf_i),
             "ic_superior": _valor(sup_i),
             "p_valor": _valor(p),
-            "significativo": bool(float(p) < 0.05),
+            "significativo": bool(float(p) < alfa),
         })
 
     puntos = [{"x": _valor(v), "y": _valor(float(yi))} for v, yi in zip(x[:, 0], y)]
@@ -1547,8 +1812,30 @@ def api_regresion():
     predicciones = None
     if datos.get("predecir"):
         nuevos = _parse_predicciones(datos["predecir"], x.shape[1])
-        vals = resultado.predecir(nuevos)
-        predicciones = [{"fila": i + 1, "prediccion": _valor(v)} for i, v in enumerate(np.atleast_1d(vals))]
+        vals = np.atleast_1d(resultado.predecir(nuevos))
+        # Intervalos para la media y para una observación nueva, y aviso de extrapolación.
+        xtx_inv = np.linalg.inv(diseño.T @ diseño)
+        tcrit = float(stats.t.ppf((1 + confianza) / 2, resultado.gl))
+        minimos, maximos = x.min(axis=0), x.max(axis=0)
+        predicciones = []
+        for i, (fila, v) in enumerate(zip(nuevos, vals)):
+            x0 = np.concatenate([[1.0], fila])
+            h0 = float(x0 @ xtx_inv @ x0)
+            se_media, se_pred = rmse * math.sqrt(h0), rmse * math.sqrt(1 + h0)
+            fuera = bool(np.any(fila < minimos) or np.any(fila > maximos))
+            predicciones.append({
+                "fila": i + 1, "prediccion": _valor(v),
+                "ic_media": [_valor(v - tcrit * se_media), _valor(v + tcrit * se_media)],
+                "ic_prediccion": [_valor(v - tcrit * se_pred), _valor(v + tcrit * se_pred)],
+                "extrapola": fuera,
+            })
+        if any(pr["extrapola"] for pr in predicciones):
+            avisos_pred = ("Alguna predicción cae fuera del rango de los datos observados (extrapolación): "
+                           "el modelo no está respaldado por datos en esa zona.")
+        else:
+            avisos_pred = None
+    else:
+        avisos_pred = None
 
     r2 = float(resultado.r_cuadrado)
     r2_ajustado = 1 - (1 - r2) * (len(y) - 1) / resultado.gl if resultado.gl > 0 else None
@@ -1566,12 +1853,29 @@ def api_regresion():
                 "sse": _valor(sse),
                 "sst": _valor(sst),
                 "confianza": confianza,
+                "alfa": alfa,
+                "f": _valor(diag.get("f")),
+                "gl_modelo": diag.get("gl_modelo"),
+                "gl_residual": diag.get("gl_residual"),
+                "p_f": _valor(diag.get("p_f")),
             },
+            "diagnostico": {
+                "shapiro_p": _valor(diag.get("shapiro_p")),
+                "breusch_pagan_p": _valor(diag.get("breusch_pagan_p")),
+                "durbin_watson": _valor(diag.get("durbin_watson")),
+                "influyentes": diag.get("influyentes", []),
+                "atipicos": diag.get("atipicos", []),
+                "vif": _valor(diag.get("vif")),
+                "condicion": _valor(diag.get("condicion")),
+            },
+            "avisos": [*_avisos_entrada(), *diag.get("avisos", []), *([avisos_pred] if avisos_pred else [])],
             "puntos": puntos,
             "ajuste": ajuste,
             "residuos": [
-                {"ajustado": _valor(float(a)), "residuo": _valor(float(r)), "observado": _valor(float(o))}
-                for a, r, o in zip(y_hat, residuos, y)
+                {"ajustado": _valor(float(a)), "residuo": _valor(float(r)), "observado": _valor(float(o)),
+                 "estandarizado": _valor(float(e)), "apalancamiento": _valor(float(h)), "cook": _valor(float(c))}
+                for a, r, o, e, h, c in zip(y_hat, residuos, y, diag["estandarizados"], diag["apalancamiento"],
+                                            diag["cook"])
             ],
             "predicciones": predicciones,
             "conclusion": resultado.conclusion,
@@ -1609,7 +1913,7 @@ def api_tamano():
         )
         formula = r"n_{\text{por grupo}}=\frac{z^2[p_1(1-p_1)+p_2(1-p_2)]}{e^2}"
     else:
-        raise ValueError("Tipo de tamaño muestral desconocido.")
+        raise ErrorPeticion("Tipo de tamaño muestral desconocido.", campo="tipo")
     return jsonify({"n": n, "formula": formula, "confianza": confianza, "error": error, "N": N})
 
 
@@ -1630,7 +1934,7 @@ def api_muestreo():
         estratos = []
         for i, fila in enumerate(estratos_crudos, start=1):
             if not isinstance(fila, dict):
-                raise ValueError(f"El estrato {i} no es válido.")
+                raise ErrorPeticion(f"El estrato {i} no es válido.", campo="estratos")
             nombre = str(fila.get("nombre") or f"Estrato {i}").strip()
             tam = _entero(fila.get("N"), f"N de {nombre}")
             sigma = _numero(fila.get("sigma"), f"σ de {nombre}", 1.0)
@@ -1663,16 +1967,10 @@ def api_muestreo():
 # Simulación
 # ---------------------------------------------------------------------------
 
-_FUNCIONES_INTEGRAL = {
-    "cuadrado": (lambda x: x ** 2, 0.0, 1.0, 1 / 3, "x²", "El área bajo x² en [0, 1] vale exactamente 1/3."),
-    "seno": (lambda x: np.sin(x), 0.0, math.pi, 2.0, "sen(x)", "La integral de sen(x) en [0, π] vale exactamente 2."),
-    "exponencial": (lambda x: np.exp(x), 0.0, 1.0, math.e - 1, "eˣ", "La integral de eˣ en [0, 1] vale e−1."),
-    "circulo": (lambda x: np.sqrt(1 - x ** 2), 0.0, 1.0, math.pi / 4, "√(1−x²)", "Un cuarto de círculo de radio 1 tiene área π/4."),
-}
-
-
-def _convergencia(valores: np.ndarray, escala: float = 1.0, puntos: int = 120) -> dict:
+def _convergencia(valores: np.ndarray, escala: float = 1.0, puntos: int = 120, confianza: float = 0.95) -> dict:
+    """Trayectoria de la estimación con su banda al **nivel de confianza pedido**."""
     n = len(valores)
+    z = float(stats.norm.ppf((1 + confianza) / 2))
     pasos = np.unique(np.linspace(max(1, n // puntos), n, min(puntos, n)).astype(int))
     medias = np.cumsum(valores)[pasos - 1] / pasos
     valores_est = medias * escala
@@ -1685,8 +1983,9 @@ def _convergencia(valores: np.ndarray, escala: float = 1.0, puntos: int = 120) -
     return {
         "n": [_valor(int(v)) for v in pasos],
         "valor": [_valor(v) for v in valores_est],
-        "ic_inferior": [_valor(v - 1.96 * s) for v, s in zip(valores_est, se)],
-        "ic_superior": [_valor(v + 1.96 * s) for v, s in zip(valores_est, se)],
+        "ic_inferior": [_valor(v - z * s) for v, s in zip(valores_est, se)],
+        "ic_superior": [_valor(v + z * s) for v, s in zip(valores_est, se)],
+        "confianza": confianza,
     }
 
 
@@ -1697,6 +1996,10 @@ def api_simulacion():
     semilla = _entero(datos.get("semilla"), "semilla", 42)
     n = _entero(datos.get("n"), "n", 10_000)
     confianza = _numero(datos.get("confianza"), "confianza", 0.95)
+    try:
+        validar_nivel(confianza)
+    except ErrorAmPu as exc:
+        raise exc.con_campo("confianza")
 
     if tipo == "pi":
         estimacion = montecarlo.simular_pi(n, semilla, confianza)
@@ -1713,25 +2016,27 @@ def api_simulacion():
             "referencia": {"valor": math.pi, "etiqueta": "π"},
             "error_absoluto": _valor(abs(estimacion.valor - math.pi)),
             "puntos": puntos,
-            "convergencia": _convergencia(dentro.astype(float), 4.0),
+            "convergencia": _convergencia(dentro.astype(float), 4.0, confianza=confianza),
+            "confianza": confianza,
             "nota": "Cada punto se genera con una semilla local; repetir con la misma semilla produce el mismo resultado.",
         })
 
     if tipo == "integral":
         clave = _texto(datos.get("funcion"), "funcion", obligatorio=False) or "cuadrado"
-        if clave not in _FUNCIONES_INTEGRAL:
-            raise ValueError("Función no disponible. Elige x², sen(x), eˣ o √(1−x²).")
-        funcion, a, b, referencia, etiqueta, nota = _FUNCIONES_INTEGRAL[clave]
-        if datos.get("a") not in (None, ""):
-            a = _numero(datos.get("a"), "a")
-        if datos.get("b") not in (None, ""):
-            b = _numero(datos.get("b"), "b")
-        if not a < b:
-            raise ValueError("El extremo inferior a debe ser menor que b.")
+        integrando, a, b = montecarlo.integrando(
+            clave,
+            None if _vacio(datos.get("a")) else _numero(datos.get("a"), "a"),
+            None if _vacio(datos.get("b")) else _numero(datos.get("b"), "b"),
+        )
+        funcion, etiqueta = integrando.funcion, integrando.etiqueta
+        # La referencia es la integral exacta EN EL INTERVALO PEDIDO, F(b) − F(a).
+        referencia = integrando.exacta(a, b)
         estimacion = montecarlo.integrar(funcion, a, b, n, semilla, confianza)
         x = np.random.default_rng(semilla).uniform(a, b, size=n)
         y = funcion(x)
         xs = np.linspace(a, b, 220)
+        nota = (f"Valor exacto en [{_fmt_compacto(a)}, {_fmt_compacto(b)}]: {integrando.expresion_exacta} "
+                f"= {_fmt_compacto(referencia)}.")
         return jsonify({
             "tipo": tipo,
             "funcion": clave,
@@ -1739,35 +2044,46 @@ def api_simulacion():
             "intervalo_integracion": [_valor(a), _valor(b)],
             "estimacion": {"valor": _valor(estimacion.valor), "error_estandar": _valor(estimacion.error_estandar),
                            "intervalo": _valor(estimacion.intervalo), "n": estimacion.n},
-            "referencia": {"valor": _valor(referencia), "etiqueta": "valor exacto"},
+            "referencia": {"valor": _valor(referencia), "etiqueta": "valor exacto",
+                           "expresion": integrando.expresion_exacta},
             "error_absoluto": _valor(abs(estimacion.valor - referencia)),
             "curva": {"x": [_valor(v) for v in xs], "y": [_valor(v) for v in funcion(xs)]},
-            "convergencia": _convergencia(np.asarray(y), b - a),
+            "convergencia": _convergencia(np.asarray(y), b - a, confianza=confianza),
+            "confianza": confianza,
             "nota": nota,
         })
 
     if tipo == "muestra":
         clave = _texto(datos.get("clave"), "clave")
         modelo = obtener(clave)
-        parametros = datos.get("parametros") or {}
-        muestra = np.asarray(montecarlo.generar_muestra(clave, parametros, min(n, 200_000), semilla))
+        parametros = _parametros_modelo(modelo, datos.get("parametros"))
+        # Se genera exactamente el tamaño pedido (el motor limita a 1 000 000 con un error declarado).
+        muestra = np.asarray(montecarlo.generar_muestra(clave, parametros, n, semilla))
         nota = "Muestra simulada con semilla reproducible."
         if muestra.ndim > 1:
             muestra = muestra[:, 0]
             nota = "Se analiza la primera componente marginal de la simulación multivariante."
-        conteos, bordes = np.histogram(muestra, bins=min(40, max(8, int(math.sqrt(len(muestra))))), density=True)
-        centros = (bordes[1:] + bordes[:-1]) / 2
-        params = modelo.validar(**{p.nombre: parametros.get(p.nombre, p.default) for p in modelo.parametros})
+        params = modelo.validar(**parametros)
         if modelo.discreta:
-            soporte = modelo.soporte(**params)
-            izq = max(int(soporte[0]), int(np.min(muestra)))
-            der = min(int(soporte[1]), int(np.max(muestra))) if math.isfinite(soporte[1]) else int(np.max(muestra))
-            if der - izq <= 80:
-                xs = np.arange(izq, der + 1)
+            # Clases centradas en enteros y de anchura entera: así la altura de cada barra
+            # (frecuencia relativa / anchura) es comparable con la función de masa.
+            minimo, maximo = int(np.min(muestra)), int(np.max(muestra))
+            paso = max(1, math.ceil((maximo - minimo + 1) / 40))
+            clases = math.ceil((maximo - minimo + 1) / paso)
+            bordes = minimo - 0.5 + paso * np.arange(clases + 1)
+            conteos, bordes = np.histogram(muestra, bins=bordes, density=True)
+            centros = (bordes[1:] + bordes[:-1]) / 2
+            if paso == 1:
+                xs = np.arange(minimo, maximo + 1)
+                ys = modelo.pmf(xs, **params)
             else:
-                xs = np.unique(centros.astype(int))
-            ys = modelo.pmf(xs, **params)
+                xs = centros
+                acumulada = np.asarray(modelo.cdf(np.floor(bordes), **params), dtype=float)
+                ys = np.diff(acumulada) / paso
+                nota += f" Las clases agrupan {paso} valores enteros; la curva teórica es la masa media por valor en cada clase."
         else:
+            conteos, bordes = np.histogram(muestra, bins=min(40, max(8, int(math.sqrt(len(muestra))))), density=True)
+            centros = (bordes[1:] + bordes[:-1]) / 2
             xs = np.linspace(float(np.min(muestra)), float(np.max(muestra)), 220)
             ys = modelo.pdf(xs, **params)
         return jsonify({
@@ -1786,6 +2102,7 @@ def api_simulacion():
             },
             "histograma": {"centros": [_valor(c) for c in centros], "densidad": [_valor(v) for v in conteos], "bordes": [_valor(v) for v in bordes]},
             "teorica": {"x": [_valor(v) for v in xs], "y": [_valor(v) for v in ys]},
+            "discreta": bool(modelo.discreta),
             "muestra": [_valor(v) for v in muestra[:250]],
             "nota": nota,
         })
@@ -1815,17 +2132,19 @@ def api_simulacion():
             "aic": _valor(ajuste.aic),
             "ks": _valor(ajuste.ks),
             "p_ks": _valor(ajuste.p_ks),
-            "histograma": {"centros": [_valor(c) for c in centros], "densidad": [_valor(v) for v in conteos]},
+            "histograma": {"centros": [_valor(c) for c in centros], "densidad": [_valor(v) for v in conteos], "bordes": [_valor(v) for v in bordes]},
             "curva": {"x": [_valor(v) for v in xs], "y": [_valor(v) for v in ys]},
             "qq": qq,
             "n": int(len(x)),
-            "nota": "El p-valor de Kolmogorov–Smirnov es exploratorio: los parámetros se estimaron con los mismos datos.",
+            "nota": ("Ajuste por máxima verosimilitud (determinista: no depende de la semilla). El p-valor de "
+                     "Kolmogorov–Smirnov es exploratorio: los parámetros se estimaron con los mismos datos."),
+            "avisos": _avisos_entrada(),
         })
 
     if tipo == "qq":
         clave = _texto(datos.get("clave"), "clave")
         modelo = obtener(clave)
-        parametros = datos.get("parametros") or {}
+        parametros = _parametros_modelo(modelo, datos.get("parametros"))
         x = _serie(datos.get("datos"), "datos", minimo=3)
         teoricos, observados = montecarlo.qq_plot(x, clave, parametros)
         return jsonify({
@@ -1837,7 +2156,7 @@ def api_simulacion():
             "nota": "Si los puntos siguen aproximadamente una recta, el modelo describe bien la muestra.",
         })
 
-    raise ValueError("Tipo de simulación desconocido.")
+    raise ErrorPeticion("Tipo de simulación desconocido.", campo="tipo")
 
 
 # ---------------------------------------------------------------------------
@@ -1984,7 +2303,7 @@ def api_exportar():
     resumen = str(datos.get("resumen") or "")[:4000]
     tablas_crudas = datos.get("tablas") or []
     if not isinstance(tablas_crudas, list):
-        raise ValueError("«tablas» debe ser una lista de tablas.")
+        raise ErrorPeticion("«tablas» debe ser una lista de tablas.")
     tablas: dict[str, pd.DataFrame] = {}
     for i, tabla in enumerate(tablas_crudas[:8], start=1):
         if not isinstance(tabla, dict):
@@ -2012,17 +2331,17 @@ def api_exportar():
     try:
         if formato in {"xlsx", "excel"}:
             if not tablas:
-                raise ValueError("No hay tablas para exportar a Excel.")
+                raise ErrorPeticion("No hay tablas para exportar a Excel.")
             ruta = ServicioExportacion.excel(tablas, temp_dir / f"{base}.xlsx")
             nombre = f"{base}.xlsx"
         elif formato == "csv":
             if not tablas:
-                raise ValueError("No hay tablas para exportar a CSV.")
+                raise ErrorPeticion("No hay tablas para exportar a CSV.")
             ruta = ServicioExportacion.csv(next(iter(tablas.values())), temp_dir / f"{base}.csv")
             nombre = f"{base}.csv"
         elif formato == "png":
             if figura is None:
-                raise ValueError("No hay un gráfico disponible para exportar.")
+                raise ErrorPeticion("No hay un gráfico disponible para exportar.")
             ruta = ServicioExportacion.png(figura, temp_dir / f"{base}.png")
             nombre = f"{base}.png"
         elif formato == "pdf":
@@ -2034,7 +2353,7 @@ def api_exportar():
                                               temp_dir / f"{base}.json")
             nombre = f"{base}.json"
         else:
-            raise ValueError("Formato de exportación no soportado.")
+            raise ErrorPeticion("Formato de exportación no soportado.")
     except Exception:
         shutil.rmtree(temp_dir, ignore_errors=True)
         raise
@@ -2070,39 +2389,55 @@ def api_salud():
 
 @app.errorhandler(ErrorAmPu)
 def _manejar_error_ampu(error: ErrorAmPu):
-    return _error(str(error), 400, tipo="dominio")
+    """Errores tipados del motor: mensaje en español, campo culpable y sugerencia."""
+    estado = 504 if isinstance(error, TiempoExcedidoError) else 400
+    return _error(str(error), estado, campo=error.campo, tipo=error.tipo, sugerencia=error.sugerencia,
+                  posicion=error.posicion, detalle=error.detalle)
 
 
 @app.errorhandler(KeyError)
 def _manejar_keyerror(error: KeyError):
-    mensaje = error.args[0] if error.args else str(error)
-    return _error(str(mensaje).strip("'\""), 404, tipo="no_encontrado")
+    mensaje = str(error.args[0]) if error.args else ""
+    if mensaje.startswith(("Distribución no registrada", "Categoría desconocida")):
+        return _error(mensaje.strip("'\""), 404, campo="clave", tipo="no_encontrado")
+    return _manejar_excepcion(error)
 
 
-@app.errorhandler(413)
-def _demasiado_grande(_):
-    return _error("La petición es demasiado grande (máximo 16 MB).", 413)
+_MENSAJES_HTTP = {
+    400: "La petición no es válida.",
+    403: "Acceso no permitido.",
+    404: "No se encontró el recurso solicitado.",
+    405: "Método no permitido para esta ruta.",
+    408: "La petición tardó demasiado en llegar.",
+    413: "La petición es demasiado grande (máximo 16 MB).",
+    415: "Formato no admitido: la API espera JSON.",
+    429: "Demasiadas peticiones seguidas.",
+}
 
 
 @app.errorhandler(HTTPException)
 def _manejar_http(error: HTTPException):
     if request.path.startswith("/api/"):
-        return _error(error.description or "Error HTTP.", error.code or 500, tipo="http")
+        codigo = error.code or 500
+        return _error(_MENSAJES_HTTP.get(codigo, f"Error HTTP {codigo}."), codigo, tipo="http")
     return error
 
 
 @app.errorhandler(Exception)
 def _manejar_excepcion(error: Exception):
-    if isinstance(error, ValueError):
-        return _error(str(error), 400)
-    log.exception("Error interno en %s", request.path)
-    if request.path.startswith("/api/"):
+    """Nunca se muestra al usuario un mensaje interno ni en otro idioma."""
+    log.exception("Error no controlado en %s", request.path)
+    if not request.path.startswith("/api/"):
+        return "Error interno", 500
+    if isinstance(error, (ValueError, ArithmeticError)):
+        # Una biblioteca numérica rechazó los datos: es un problema de dominio,
+        # pero su mensaje original (en inglés) se queda en el registro.
         return _error(
-            "No se pudo completar la operación. Revisa los datos e inténtalo de nuevo.",
-            500,
-            tipo="interno",
-        )
-    return "Error interno", 500
+            "No se pudo calcular con estos datos: algún valor está fuera del dominio de la operación.",
+            400, tipo="dominio", sugerencia="Revisa valores extremos, ceros o muestras sin variación.")
+    return _error(
+        "El motor encontró un problema interno. No es un fallo de tus datos; inténtalo de nuevo.",
+        500, tipo="interno")
 
 
 @app.get("/api/ejemplos")
@@ -2158,8 +2493,24 @@ def api_ejemplos():
     })
 
 
+def servir(anfitrion: str = "127.0.0.1", puerto: int = 5000) -> None:
+    """Sirve la aplicación con Waitress (servidor WSGI de producción).
+
+    Solo si Waitress no está instalado se recurre al servidor de desarrollo de
+    Werkzeug, con un aviso en el registro.
+    """
+    try:
+        from waitress import serve
+    except ImportError:
+        log.warning("Waitress no está disponible: se usa el servidor de desarrollo de Flask.")
+        app.run(host=anfitrion, port=puerto, debug=False, use_reloader=False, threaded=True)
+        return
+    serve(app, host=anfitrion, port=puerto, threads=8, channel_timeout=60, ident="AmPu",
+          max_request_body_size=app.config["MAX_CONTENT_LENGTH"])
+
+
 if __name__ == "__main__":
-    puerto = int(os.environ.get("AMPU_PORT", "5000"))
+    puerto = int(os.environ.get("AMPU_PORT", os.environ.get("PORT", "5000")))
     anfitrion = os.environ.get("AMPU_HOST", "127.0.0.1")
     log.info("AmPu %s · http://%s:%s", VERSION_APP, anfitrion, puerto)
-    app.run(host=anfitrion, port=puerto, debug=False, use_reloader=False, threaded=True)
+    servir(anfitrion, puerto)

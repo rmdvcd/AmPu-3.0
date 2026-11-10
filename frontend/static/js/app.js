@@ -3,9 +3,9 @@
  * paleta de comandos, ayuda y ciclo de vida de cada vista.
  */
 
-import { el, toast, modal, boton, anunciar, renderMath } from "./ui.js";
+import { el, toast, modal, boton, anunciar, renderMath, comportamientoScroll } from "./ui.js";
 import { icono, hidratarIconos } from "./icons.js";
-import { api } from "./api.js";
+import { api, cancelarCalculos, hayCalculosEnCurso } from "./api.js";
 import {
   cargarMeta,
   cicloTema,
@@ -171,7 +171,7 @@ function marcarNav(vista) {
 function actualizarMigas(vista) {
   const metaVista = VISTAS[vista];
   if (migaActual) migaActual.textContent = metaVista?.titulo || "Inicio";
-  document.title = `${metaVista?.titulo || "AmPu"} · AmPu 3.1`;
+  document.title = `${metaVista?.titulo || "AmPu"} · AmPu 3.2`;
 }
 
 function esqueletoVista() {
@@ -248,7 +248,7 @@ async function renderRuta(forzar = false) {
   actualizarMigas(vista);
   mostrarCarga(true);
   contenido.replaceChildren(esqueletoVista());
-  window.scrollTo({ top: 0, behavior: prefs.reducir_movimiento ? "auto" : "smooth" });
+  window.scrollTo({ top: 0, behavior: comportamientoScroll() });
 
   try {
     const modulo = await MODULOS[vista]();
@@ -612,9 +612,30 @@ function conectarEventos() {
       anunciar(`Tema ${siguiente === "sistema" ? "del sistema" : siguiente}.`);
       return;
     }
-    if (evento.key === "?" && !escribiendo && !conModificador) {
+    if ((evento.key === "?" && !escribiendo && !conModificador) || evento.key === "F1") {
       evento.preventDefault();
       abrirAyuda();
+      return;
+    }
+    // Esc cancela el cálculo en curso (si no hay un diálogo abierto, que tiene prioridad).
+    if (evento.key === "Escape" && hayCalculosEnCurso() && !document.querySelector("dialog[open]")) {
+      const cancelados = cancelarCalculos();
+      if (cancelados) {
+        evento.preventDefault();
+        toast("Cálculo cancelado.", { tipo: "info" });
+        anunciar("Cálculo cancelado.");
+        return;
+      }
+    }
+    // Alt+G lleva el foco al primer gráfico visible (desde ahí: flechas, +, −, 0).
+    if (evento.altKey && !conModificador && evento.key.toLocaleLowerCase("es") === "g") {
+      const grafico = [...document.querySelectorAll(".grafico svg[tabindex]")].find((n) => n.getBoundingClientRect().width > 0);
+      if (grafico) {
+        evento.preventDefault();
+        grafico.focus();
+        grafico.scrollIntoView({ behavior: comportamientoScroll(), block: "center" });
+        anunciar("Gráfico. Flechas para recorrer los valores; más y menos para el zoom; cero para restablecer.");
+      }
       return;
     }
     if (evento.key === "Escape" && aplicacion?.classList.contains("sidebar-abierta")) {

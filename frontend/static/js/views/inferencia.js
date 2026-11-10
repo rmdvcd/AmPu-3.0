@@ -13,6 +13,10 @@ import {
   conCarga,
   fmtNum,
   fmtP,
+  fmtPreciso,
+  fmtIntervalo,
+  errorEnCampo,
+  textoError,
   fmtPorcentaje,
   segmentado,
   renderMath,
@@ -20,22 +24,25 @@ import {
   pliegue,
   anunciar,
   botonesExportar,
+  comportamientoScroll,
 } from "../ui.js";
 import { icono } from "../icons.js";
 import { dibujar } from "../chart.js";
 import { api, esCancelacion } from "../api.js";
+import { fmtEntrada } from "../entrada.js";
 import { cargarMeta, leccion, navegar, registrarHistorial, transito } from "../store.js";
 
+/* Ejemplos escritos con la convención de entrada de AmPu: coma decimal y valores separados por espacios. */
 const EJEMPLOS_PRUEBA = {
-  t_una: { datos: "12.4 11.8 13.1 12.9 12.2 12.7 12.5 11.9 12.8 12.3", mu0: 12 },
-  z_una: { datos: "10.1 9.8 10.4 9.9 10.2 10.3 9.7 10.5", mu0: 10, sigma: 0.6 },
+  t_una: { datos: "12,4 11,8 13,1 12,9 12,2 12,7 12,5 11,9 12,8 12,3", mu0: 12 },
+  z_una: { datos: "10,1 9,8 10,4 9,9 10,2 10,3 9,7 10,5", mu0: 10, sigma: 0.6 },
   t_dos: {
-    datos: "12 13 11 14 12 13 12.5 11.5 13.5 12.2",
-    datos2: "15 16 14 15 17 16 15.5 14.8 16.2 15.1",
+    datos: "12 13 11 14 12 13 12,5 11,5 13,5 12,2",
+    datos2: "15 16 14 15 17 16 15,5 14,8 16,2 15,1",
   },
   z_dos: {
-    datos: "12 13 11 14 12 13 12.5 11.5",
-    datos2: "15 16 14 15 17 16 15.5 14.8",
+    datos: "12 13 11 14 12 13 12,5 11,5",
+    datos2: "15 16 14 15 17 16 15,5 14,8",
     sigma_a: 1.2,
     sigma_b: 1.4,
   },
@@ -44,7 +51,7 @@ const EJEMPLOS_PRUEBA = {
   chi_indep: { tabla: "42 28 30\n18 32 40" },
   chi_bondad: { observadas: "18 22 29 31", esperadas: "25 25 25 25", parametros_estimados: 0 },
   anova: { grupos: "10 12 11 13 12\n14 15 13 16 15\n9 11 10 12 10" },
-  correlacion: { x: "1 2 3 4 5 6 7 8", y: "2.1 2.9 4.2 4.8 6.1 6.9 8.2 8.8", metodo: "pearson" },
+  correlacion: { x: "1 2 3 4 5 6 7 8", y: "2,1 2,9 4,2 4,8 6,1 6,9 8,2 8,8", metodo: "pearson" },
   mann_whitney: { datos: "12 13 11 14 12 13", datos2: "15 16 14 15 17 16" },
   wilcoxon: { datos: "120 118 131 129 122 127", datos2: "115 116 128 125 120 122" },
   kruskal: { grupos: "10 12 11 13 12\n14 15 13 16 15\n9 11 10 12 10" },
@@ -60,41 +67,61 @@ function normalizar(texto) {
 }
 
 function valorTexto(valor) {
+  // Series numéricas llegadas de otra vista: coma decimal y espacios, como las escribiría el usuario.
+  if (Array.isArray(valor) && valor.every((v) => typeof v === "number")) return valor.map((v) => fmtEntrada(v)).join(" ");
   if (Array.isArray(valor)) return valor.join("\n");
   if (valor === null || valor === undefined) return "";
   return String(valor);
 }
 
-function interpretarEfecto(extras) {
-  if (extras.d_cohen !== undefined && extras.d_cohen !== null) {
-    const d = Math.abs(extras.d_cohen);
-    const magnitud = d >= 0.8 ? "grande" : d >= 0.5 ? "moderado" : d >= 0.2 ? "pequeño" : "despreciable";
-    return `d de Cohen = ${fmtNum(extras.d_cohen)}: efecto ${magnitud}.`;
-  }
-  if (extras.eta2 !== undefined && extras.eta2 !== null) {
-    const e = extras.eta2;
-    const magnitud = e >= 0.14 ? "grande" : e >= 0.06 ? "moderado" : "pequeño";
-    return `η² = ${fmtNum(e)}: proporción de variabilidad explicada ${magnitud}.`;
-  }
-  if (extras.r !== undefined && extras.r !== null) {
-    const r = Math.abs(extras.r);
-    const magnitud = r >= 0.7 ? "fuerte" : r >= 0.4 ? "moderada" : r >= 0.2 ? "débil" : "muy débil";
-    return `r = ${fmtNum(extras.r)}: asociación lineal ${magnitud}.`;
+/* Umbrales orientativos de Cohen (1988). Son convenciones, no reglas: dependen del campo de estudio. */
+const EFECTOS = [
+  ["d_cohen", "d de Cohen", [0.2, 0.5, 0.8], "efecto"],
+  ["h_cohen", "h de Cohen", [0.2, 0.5, 0.8], "efecto"],
+  ["w_cohen", "w de Cohen", [0.1, 0.3, 0.5], "efecto"],
+  ["v_cramer", "V de Cramér", [0.1, 0.3, 0.5], "asociación"],
+  ["eta2", "η²", [0.01, 0.06, 0.14], "efecto"],
+  ["epsilon2", "ε²", [0.01, 0.06, 0.14], "efecto"],
+  ["r_biserial", "r biserial de rangos", [0.1, 0.3, 0.5], "efecto"],
+  ["r", "r", [0.1, 0.3, 0.5], "asociación"],
+];
+
+function efectoPrincipal(extras) {
+  for (const [clave, nombre, cortes, sustantivo] of EFECTOS) {
+    const valor = extras?.[clave];
+    if (typeof valor !== "number" || !Number.isFinite(valor)) continue;
+    const abs = Math.abs(valor);
+    const femenino = sustantivo === "asociación";
+    const magnitud =
+      abs >= cortes[2] ? "grande" : abs >= cortes[1] ? (femenino ? "moderada" : "moderado") : abs >= cortes[0] ? (femenino ? "pequeña" : "pequeño") : "despreciable";
+    return { clave, nombre, valor, magnitud, sustantivo };
   }
   return null;
+}
+
+function interpretarEfecto(extras) {
+  const efecto = efectoPrincipal(extras);
+  if (!efecto) return null;
+  return `${efecto.nombre} = ${fmtNum(efecto.valor)}: ${efecto.sustantivo} ${efecto.magnitud} según los umbrales orientativos de Cohen.`;
 }
 
 function filasExtras(extras) {
   const etiquetas = [
     ["d_cohen", "d de Cohen"],
+    ["h_cohen", "h de Cohen"],
+    ["w_cohen", "w de Cohen"],
+    ["v_cramer", "V de Cramér"],
     ["eta2", "η² (varianza explicada)"],
+    ["epsilon2", "ε² (rangos)"],
+    ["r_biserial", "r biserial de rangos"],
     ["r", "Correlación r"],
     ["r2", "R²"],
     ["n", "Tamaño de muestra"],
-    ["n1", "Tamaño del grupo 1"],
-    ["n2", "Tamaño del grupo 2"],
+    ["n1", "Tamaño del grupo A"],
+    ["n2", "Tamaño del grupo B"],
     ["media_muestral", "Media muestral"],
     ["medias", "Medias de los grupos"],
+    ["medianas", "Medianas de los grupos"],
     ["proporcion", "Proporción observada"],
     ["proporciones", "Proporciones observadas"],
     ["k", "Número de grupos"],
@@ -109,12 +136,26 @@ function filasExtras(extras) {
   return filas;
 }
 
+/** La F de Snedecor tiene dos grados de libertad: numerador y denominador. */
+function glDobles(datos) {
+  const p = datos.curva && datos.curva.parametros;
+  return Boolean(p && p.gl1 !== undefined && p.gl1 !== null && p.gl2 !== undefined && p.gl2 !== null);
+}
+
+function textoGl(datos, decimales = 2) {
+  if (glDobles(datos)) {
+    const { gl1, gl2 } = datos.curva.parametros;
+    return `${fmtNum(gl1, { decimales })}; ${fmtNum(gl2, { decimales })}`;
+  }
+  return fmtNum(datos.gl, { decimales });
+}
+
 export async function montar(host, parametro) {
   let metaDatos;
   try {
     metaDatos = await cargarMeta();
   } catch (error) {
-    host.append(alerta({ tipo: "error", titulo: "No se pudo cargar el catálogo", texto: error.message }));
+    host.append(alerta({ tipo: "error", titulo: "No se pudo cargar el catálogo", texto: textoError(error) }));
     return null;
   }
 
@@ -218,16 +259,17 @@ export async function montar(host, parametro) {
       requerido: true,
       valor: valorTexto(valorInicial ?? spec.default ?? ""),
       placeholder: spec.ejemplo || "",
+      nombre: spec.id,
       onInput,
     };
     if (spec.tipo === "serie") {
-      return campo({ ...comun, tipo: "serie", filas: 4, ayuda: spec.ayuda || "Separa las observaciones con espacios, comas o saltos de línea." });
+      return campo({ ...comun, tipo: "serie", filas: 4, ayuda: "" });
     }
     if (spec.tipo === "matriz") {
-      return campo({ ...comun, tipo: "matriz", filas: 5, ayuda: spec.ayuda || "Una fila por línea; separa columnas con espacios o tabuladores." });
+      return campo({ ...comun, tipo: "matriz", filas: 5, ayuda: "Una fila por línea." });
     }
     if (spec.tipo === "grupos") {
-      return campo({ ...comun, tipo: "matriz", filas: 5, ayuda: spec.ayuda || "Una línea por grupo; separa observaciones con espacios o comas." });
+      return campo({ ...comun, tipo: "matriz", filas: 5, ayuda: "Una línea por grupo." });
     }
     if (spec.tipo === "entero") {
       return campo({ ...comun, tipo: "numero", min: spec.min ?? null, max: spec.max ?? null });
@@ -286,18 +328,30 @@ export async function montar(host, parametro) {
       )
     );
 
-    const selectorAlternativa = segmentado({
-      etiqueta: "Hipótesis alternativa",
-      valor: alternativa,
-      opciones: [
-        ["two-sided", "Bilateral ≠"],
-        ["less", "Menor <"],
-        ["greater", "Mayor >"],
-      ],
-      onCambio: (valor) => {
-        alternativa = valor;
-      },
-    });
+    // Solo las pruebas direccionales admiten alternativa; χ², ANOVA y Kruskal son ómnibus.
+    const admiteAlternativa = spec.admite_alternativa !== false;
+    const h1Vivo = el("strong", {}, admiteAlternativa ? spec.h1_alternativas?.[alternativa] || spec.h1 : spec.h1);
+    const hipotesisVivas = el(
+      "div",
+      { class: "hipotesis-vivas", "aria-live": "polite" },
+      el("span", {}, "H₀: ", el("strong", {}, spec.h0)),
+      el("span", {}, "H₁: ", h1Vivo)
+    );
+    const selectorAlternativa = admiteAlternativa
+      ? segmentado({
+          etiqueta: "Hipótesis alternativa",
+          valor: alternativa,
+          opciones: [
+            ["two-sided", "Bilateral ≠"],
+            ["less", "Menor <"],
+            ["greater", "Mayor >"],
+          ],
+          onCambio: (valor) => {
+            alternativa = valor;
+            h1Vivo.textContent = spec.h1_alternativas?.[valor] || spec.h1;
+          },
+        })
+      : el("p", { class: "campo__ayuda" }, "Esta prueba contrasta todas las diferencias a la vez: no tiene versión unilateral.");
 
     botonEjecutar = boton("Ejecutar prueba", { icono: "reproducir", dataset: { accionPrimaria: "true" } });
     const botonLimpiar = boton("Limpiar", {
@@ -334,12 +388,7 @@ export async function montar(host, parametro) {
       contenido: el(
         "div",
         { class: "pila" },
-        el(
-          "div",
-          { class: "chips" },
-          el("span", { class: "chip chip--marca" }, `H₀: ${spec.h0}`),
-          el("span", { class: "chip" }, `H₁: ${spec.h1}`)
-        ),
+        hipotesisVivas,
         bloquesDatos.length
           ? el("div", { class: bloquesDatos.length > 1 ? "rejilla rejilla--2" : "" }, bloquesDatos.map((c) => c.envoltura))
           : null,
@@ -408,25 +457,21 @@ export async function montar(host, parametro) {
         ok = false;
         continue;
       }
-      if (definicion.tipo === "serie") {
-        const tokens = texto.split(/[\s,;]+/).filter(Boolean);
-        if (tokens.length < 2) {
-          c.setError("Introduce al menos dos observaciones numéricas.");
+      if (["serie", "matriz", "grupos"].includes(definicion.tipo)) {
+        // El campo usa el mismo lector que el motor: si no se puede leer, el error ya indica dónde.
+        if (!c.validar()) {
           ok = false;
-        } else if (tokens.some((t) => !Number.isFinite(Number(t.replace(",", "."))))) {
-          c.setError("Hay valores no numéricos. Usa punto decimal.");
-          ok = false;
+          continue;
         }
-      } else if (definicion.tipo === "matriz") {
-        const filas = texto.split(/\r?\n/).filter((l) => l.trim());
-        if (filas.length < 2 || filas.some((l) => l.trim().split(/[\s,;]+/).filter(Boolean).length < 2)) {
-          c.setError("La tabla necesita al menos 2 filas y 2 columnas numéricas.");
+        const lectura = c.lectura();
+        if (definicion.tipo === "serie" && lectura.valores.length < 2) {
+          c.setError("Introduce al menos dos observaciones.");
           ok = false;
-        }
-      } else if (definicion.tipo === "grupos") {
-        const filas = texto.split(/\r?\n/).filter((l) => l.trim());
-        if (filas.length < 2 || filas.some((l) => l.trim().split(/[\s,;]+/).filter(Boolean).length < 2)) {
-          c.setError("Cada grupo necesita al menos 2 observaciones y debe haber 2 grupos.");
+        } else if (definicion.tipo === "matriz" && (lectura.filas.length < 2 || lectura.filas.some((f) => f.length < 2))) {
+          c.setError("La tabla necesita al menos 2 filas y 2 columnas.");
+          ok = false;
+        } else if (definicion.tipo === "grupos" && (lectura.filas.length < 2 || lectura.filas.some((f) => f.length < 2))) {
+          c.setError("Hacen falta al menos 2 grupos con 2 observaciones cada uno.");
           ok = false;
         }
       } else if (definicion.tipo === "numero" || definicion.tipo === "entero") {
@@ -453,7 +498,7 @@ export async function montar(host, parametro) {
   }
 
   function construirPayload(spec) {
-    const datos = { prueba: spec.clave, alfa: campoAlfa.valor(), alternativa };
+    const datos = { prueba: spec.clave, alfa: campoAlfa.valor(), alternativa: spec.admite_alternativa === false ? "two-sided" : alternativa };
     for (const definicion of spec.campos) {
       const c = campos[definicion.id];
       if (definicion.tipo === "serie" || definicion.tipo === "matriz" || definicion.tipo === "grupos") {
@@ -494,19 +539,20 @@ export async function montar(host, parametro) {
       if (!esCancelacion(error)) {
         resultado = null;
         contenido.querySelector(".resultado-prueba")?.remove();
-        contenido.append(
-          panel({
-            titulo: "No se pudo ejecutar la prueba",
-            icono: "alerta",
-            contenido: alerta({
-              tipo: "error",
-              titulo: "Revisa los datos",
-              texto: error.message,
-              acciones: [boton("Reintentar", { variante: "secundario", pequeno: true, icono: "actualizar", onClick: ejecutar })],
-            }),
-          })
-        );
-        toast(error.message, { tipo: "error" });
+        const enCampo = errorEnCampo(error, { ...campos, alfa: campoAlfa });
+        const bloqueError = panel({
+          titulo: "No se pudo ejecutar la prueba",
+          icono: "alerta",
+          contenido: alerta({
+            tipo: "error",
+            titulo: error.tipo === "timeout" ? "El cálculo tardó demasiado" : enCampo ? "Revisa el campo marcado" : "Revisa los datos",
+            texto: textoError(error),
+            acciones: [boton("Reintentar", { variante: "secundario", pequeno: true, icono: "actualizar", onClick: ejecutar })],
+          }),
+        });
+        bloqueError.classList.add("resultado-prueba");
+        contenido.append(bloqueError);
+        anunciar(`Error: ${error.message}`);
       }
     } finally {
       botonEjecutar.cargando(false);
@@ -516,6 +562,16 @@ export async function montar(host, parametro) {
 
   /* ------------------------- resultado ------------------------- */
 
+  const NOMBRES_FAMILIA = { normal: "N(0, 1)", t: "t de Student", chi2: "χ²", f: "F de Snedecor" };
+
+  function nombreNula(curva) {
+    const p = curva.parametros || {};
+    if (curva.familia === "t") return `t(${fmtNum(p.gl, { decimales: 2 })})`;
+    if (curva.familia === "chi2") return `χ²(${fmtNum(p.gl, { decimales: 2 })})`;
+    if (curva.familia === "f") return `F(${fmtNum(p.gl1 ?? p.gl, { decimales: 2 })}; ${fmtNum(p.gl2, { decimales: 2 })})`;
+    return NOMBRES_FAMILIA[curva.familia] || curva.familia;
+  }
+
   function configGrafico(datos) {
     if (!datos.curva) return null;
     const curva = datos.curva;
@@ -523,40 +579,55 @@ export async function montar(host, parametro) {
     if (!xs.length) return null;
     const xmin = Math.min(...xs);
     const xmax = Math.max(...xs);
+    // La región crítica la define el motor (curva.region y sus valores críticos):
+    // así el dibujo no puede contradecir la decisión.
     const regiones = [];
-    const etiquetaRegion = datos.alternativa === "two-sided" ? "α/2" : "α";
-    if (datos.alternativa === "less" && curva.critico_bajo !== null) {
-      regiones.push({ desde: xmin, hasta: Number(curva.critico_bajo), etiqueta: "rechazo" });
-    } else if (datos.alternativa === "greater" || curva.region === "derecha") {
-      if (curva.critico_alto !== null) regiones.push({ desde: Number(curva.critico_alto), hasta: xmax, etiqueta: "rechazo" });
-    } else if (curva.critico_bajo !== null && curva.critico_alto !== null) {
-      regiones.push({ desde: xmin, hasta: Number(curva.critico_bajo), etiqueta: etiquetaRegion });
-      regiones.push({ desde: Number(curva.critico_alto), hasta: xmax, etiqueta: etiquetaRegion });
+    const bajo = curva.critico_bajo === null || curva.critico_bajo === undefined ? null : Number(curva.critico_bajo);
+    const alto = curva.critico_alto === null || curva.critico_alto === undefined ? null : Number(curva.critico_alto);
+    if (curva.region === "izquierda" && bajo !== null) {
+      regiones.push({ desde: xmin, hasta: bajo, etiqueta: "rechazo (α)" });
+    } else if (curva.region === "derecha" && alto !== null) {
+      regiones.push({ desde: alto, hasta: xmax, etiqueta: "rechazo (α)" });
+    } else if (curva.region === "bilateral" && bajo !== null && alto !== null) {
+      regiones.push({ desde: xmin, hasta: bajo, etiqueta: "α/2" });
+      regiones.push({ desde: alto, hasta: xmax, etiqueta: "α/2" });
     }
-    const estadistico = Number(datos.estadistico);
+    const estadistico = Number(curva.estadistico ?? datos.estadistico);
     const dentro = Number.isFinite(estadistico) && estadistico >= xmin && estadistico <= xmax;
+    const simbolo = curva.etiqueta || datos.simbolo || "estadístico";
     return {
-      series: [{ nombre: `Distribución nula (${curva.familia})`, x: curva.x, y: curva.y, color: "var(--grafico-2)", relleno: true }],
+      series: [{ nombre: `Distribución nula: ${nombreNula(curva)}${curva.aproximada ? " (aproximación)" : ""}`, x: curva.x, y: curva.y, color: "var(--grafico-2)", relleno: true, trazo: "" }],
       regiones,
-      marcador: dentro ? { x: estadistico, etiqueta: `estadístico = ${fmtNum(estadistico)}` } : null,
-      xlabel: "Estadístico de prueba",
+      marcador: dentro ? { x: estadistico, etiqueta: `${simbolo} = ${fmtNum(estadistico)}` } : null,
+      fueraDeRango: Number.isFinite(estadistico) && !dentro ? estadistico : null,
+      xlabel: `Estadístico de prueba (${simbolo})`,
       ylabel: "Densidad bajo H₀",
       altura: 280,
       yCero: true,
-      ariaLabel: "Distribución del estadístico bajo la hipótesis nula con la región de rechazo",
+      ariaLabel: `Distribución ${nombreNula(curva)} del estadístico bajo la hipótesis nula, con la región de rechazo sombreada`,
+      descripcion: `Estadístico observado ${simbolo} = ${fmtNum(estadistico)}. ${datos.rechaza ? "Cae en la región de rechazo." : "No cae en la región de rechazo."}`,
     };
   }
 
+  function etiquetaIntervalo(datos) {
+    const nivel = fmtPorcentaje(datos.intervalo_nivel ?? 1 - datos.alfa);
+    const tipo = datos.alternativa && datos.alternativa !== "two-sided" ? "cota unilateral" : "intervalo";
+    return `${tipo} al ${nivel}${datos.intervalo_de ? ` para ${datos.intervalo_de}` : ""}`;
+  }
+
   function resumenTexto(spec, datos) {
+    const simbolo = datos.simbolo || "Estadístico";
     return [
-      `${spec.nombre}`,
-      `Estadístico: ${fmtNum(datos.estadistico)}`,
-      `p-valor: ${datos.p_valor}`,
-      `α: ${datos.alfa}`,
-      datos.gl !== null ? `Grados de libertad: ${fmtNum(datos.gl)}` : "",
-      datos.intervalo ? `Intervalo: [${fmtNum(datos.intervalo[0])}, ${fmtNum(datos.intervalo[1])}]` : "",
+      `${spec.nombre} (${datos.metodo})`,
+      datos.hipotesis ? `H₀: ${datos.hipotesis.h0}   H₁: ${datos.hipotesis.h1}` : "",
+      `${simbolo} = ${fmtPreciso(datos.estadistico)}`,
+      `p-valor = ${fmtP(datos.p_valor)}${datos.exacta ? " (prueba exacta)" : ""}`,
+      `α = ${fmtNum(datos.alfa)}`,
+      datos.gl !== null && datos.gl !== undefined ? `Grados de libertad: ${textoGl(datos, 4)}` : "",
+      datos.intervalo ? `${etiquetaIntervalo(datos)}: ${fmtIntervalo(datos.intervalo)}` : "",
       `Conclusión: ${datos.conclusion}`,
       interpretarEfecto(datos.extras) || "",
+      ...(datos.avisos || []).map((a) => `Aviso: ${a}`),
     ].filter(Boolean).join("\n");
   }
 
@@ -570,29 +641,45 @@ export async function montar(host, parametro) {
         { class: "veredicto__cuerpo" },
         el("p", { class: "veredicto__titulo" }, datos.rechaza ? "Se rechaza H₀" : "No se rechaza H₀"),
         el("p", { class: "veredicto__texto" }, datos.conclusion),
-        el("p", { class: "veredicto__p" }, `p = ${fmtP(datos.p_valor)} · α = ${fmtNum(datos.alfa, { decimales: 3 })} · ${datos.metodo}`)
+        el("p", { class: "veredicto__p" }, `p = ${fmtP(datos.p_valor)} · α = ${fmtNum(datos.alfa, { decimales: 3 })} · ${datos.metodo}${datos.alternativa_texto ? ` · contraste ${datos.alternativa_texto}` : ""}`)
       )
     );
 
     const kpis = el(
       "div",
       { class: "rejilla rejilla--kpi" },
-      kpi({ etiqueta: "Estadístico", valor: fmtNum(datos.estadistico, { decimales: 5 }), detalle: datos.metodo }),
-      kpi({ etiqueta: "p-valor", valor: fmtP(datos.p_valor), detalle: "evidencia frente a H₀", tono: datos.rechaza ? "marca" : "" }),
-      kpi({ etiqueta: "Grados de libertad", valor: datos.gl !== null ? fmtNum(datos.gl, { decimales: 2 }) : "—", detalle: datos.gl !== null ? "distribución de referencia" : "no aplica" }),
+      kpi({ etiqueta: datos.simbolo ? `Estadístico ${datos.simbolo}` : "Estadístico", valor: fmtNum(datos.estadistico, { decimales: 5 }), detalle: datos.metodo }),
+      kpi({ etiqueta: "p-valor", valor: fmtP(datos.p_valor), detalle: datos.exacta ? "prueba exacta" : "evidencia frente a H₀", tono: datos.rechaza ? "marca" : "" }),
+      kpi({ etiqueta: "Grados de libertad", valor: datos.gl !== null ? textoGl(datos, 2) : "—", detalle: datos.gl === null ? "no aplica" : glDobles(datos) ? "numerador; denominador" : "distribución de referencia" }),
       datos.intervalo
-        ? kpi({ etiqueta: "Intervalo", valor: `[${fmtNum(datos.intervalo[0], { decimales: 4 })}, ${fmtNum(datos.intervalo[1], { decimales: 4 })}]`, detalle: `${fmtPorcentaje(1 - datos.alfa)} de confianza` })
+        ? kpi({ etiqueta: datos.intervalo_de ? `Intervalo para ${datos.intervalo_de}` : "Intervalo", valor: fmtIntervalo(datos.intervalo, { decimales: 4 }), detalle: etiquetaIntervalo(datos) })
         : kpi({ etiqueta: "Intervalo", valor: "—", detalle: "esta prueba no lo calcula" }),
-      interpretarEfecto(datos.extras)
-        ? kpi({ etiqueta: "Tamaño del efecto", valor: fmtNum(datos.extras.d_cohen ?? datos.extras.eta2 ?? datos.extras.r, { decimales: 4 }), detalle: interpretarEfecto(datos.extras) })
+      efectoPrincipal(datos.extras)
+        ? kpi({ etiqueta: "Tamaño del efecto", valor: fmtNum(efectoPrincipal(datos.extras).valor, { decimales: 4 }), detalle: interpretarEfecto(datos.extras) })
         : null
     );
 
     const hostGrafico = el("div");
     const cfg = configGrafico(datos);
     setTimeout(() => {
-      if (cfg) dibujar(hostGrafico, cfg);
-      else hostGrafico.append(el("p", { class: "texto-tenue texto-pequeno" }, "Esta prueba no tiene una distribución nula paramétrica simple; la decisión se basa en el p-valor."));
+      if (cfg) {
+        dibujar(hostGrafico, cfg);
+        if (cfg.fueraDeRango !== null) {
+          const lado = cfg.fueraDeRango < Number(datos.curva.x[0]) ? "a la izquierda" : "a la derecha";
+          hostGrafico.append(
+            el("p", { class: "texto-tenue texto-pequeno" },
+              `El estadístico observado (${fmtNum(cfg.fueraDeRango)}) queda fuera del rango dibujado, ${lado}: ` +
+              (datos.rechaza ? "muy dentro de la región de rechazo." : "en la cola opuesta a la región de rechazo."))
+          );
+        }
+      } else {
+        hostGrafico.append(
+          el("p", { class: "texto-tenue texto-pequeno" },
+            datos.exacta
+              ? "Esta prueba es exacta: el p-valor se obtiene enumerando la distribución discreta del estadístico, sin una curva continua de referencia. La decisión se basa en comparar p con α."
+              : "Esta prueba no tiene una distribución nula continua que dibujar; la decisión se basa en el p-valor.")
+        );
+      }
     }, 0);
 
     const formula = leccion(spec.teoria)?.formula;
@@ -612,11 +699,12 @@ export async function montar(host, parametro) {
         el(
           "dl",
           { class: "lista-definicion" },
-          el("div", {}, el("dt", {}, "Estadístico"), el("dd", {}, fmtNum(datos.estadistico, { decimales: 8 }))),
-          el("div", {}, el("dt", {}, "p-valor exacto"), el("dd", {}, String(datos.p_valor))),
+          el("div", {}, el("dt", {}, datos.simbolo ? `Estadístico ${datos.simbolo}` : "Estadístico"), el("dd", {}, fmtPreciso(datos.estadistico))),
+          // «sin redondear» ≠ «exacto»: solo se llama exacta a la prueba que lo es.
+          el("div", {}, el("dt", {}, datos.exacta ? "p-valor (prueba exacta)" : "p-valor sin redondear"), el("dd", {}, fmtPreciso(datos.p_valor))),
           el("div", {}, el("dt", {}, "α"), el("dd", {}, fmtNum(datos.alfa, { decimales: 4 }))),
-          datos.gl !== null ? el("div", {}, el("dt", {}, "Grados de libertad"), el("dd", {}, fmtNum(datos.gl, { decimales: 4 }))) : null,
-          datos.intervalo ? el("div", {}, el("dt", {}, "Intervalo"), el("dd", {}, `[${fmtNum(datos.intervalo[0], { decimales: 6 })}, ${fmtNum(datos.intervalo[1], { decimales: 6 })}]`)) : null,
+          datos.gl !== null && datos.gl !== undefined ? el("div", {}, el("dt", {}, "Grados de libertad"), el("dd", {}, textoGl(datos, 4))) : null,
+          datos.intervalo ? el("div", {}, el("dt", {}, etiquetaIntervalo(datos)), el("dd", {}, fmtIntervalo(datos.intervalo, { decimales: 6 }))) : null,
           extras.map(([etiqueta, valor]) => el("div", {}, el("dt", {}, etiqueta), el("dd", {}, valor)))
         ),
         formulaNodo
@@ -629,7 +717,7 @@ export async function montar(host, parametro) {
       contenido: el(
         "div",
         { class: "pila pila--sm" },
-        el("div", { class: "chips" }, el("span", { class: "chip chip--marca" }, `H₀: ${spec.h0}`), el("span", { class: "chip" }, `H₁: ${spec.h1}`)),
+        el("div", { class: "chips" }, el("span", { class: "chip chip--marca" }, `H₀: ${datos.hipotesis?.h0 || spec.h0}`), el("span", { class: "chip" }, `H₁: ${datos.hipotesis?.h1 || spec.h1}`)),
         el("p", { class: "texto-articulo" }, spec.supuestos || "Revisa los supuestos antes de comunicar el resultado."),
         datos.avisos?.length
           ? el("div", { class: "pila pila--sm" }, datos.avisos.map((aviso) => alerta({ tipo: "aviso", texto: aviso })))
@@ -653,8 +741,8 @@ export async function montar(host, parametro) {
     const panelGrafico = panel({
       titulo: "Distribución nula y región de rechazo",
       subtitulo: cfg
-        ? "La zona sombreada es la región crítica para el α elegido; la línea marca el estadístico observado."
-        : "No disponible para este método.",
+        ? `Referencia: ${nombreNula(datos.curva)}${datos.curva.aproximada ? " (aproximación asintótica)" : ""}. La zona sombreada es la región crítica para el α elegido; la línea marca el estadístico observado.`
+        : "Sin curva: prueba exacta o sin distribución de referencia continua.",
       icono: "grafico",
       contenido: hostGrafico,
     });
@@ -678,7 +766,7 @@ export async function montar(host, parametro) {
     if (anterior) anterior.remove();
     contenido.append(bloque);
     renderMath(bloque);
-    bloque.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    bloque.scrollIntoView({ behavior: comportamientoScroll(), block: "nearest" });
   }
 
   async function exportar(spec, datos, formato, botonNodo) {
@@ -693,7 +781,10 @@ export async function montar(host, parametro) {
           ["Estadístico", datos.estadistico],
           ["p-valor", datos.p_valor],
           ["α", datos.alfa],
-          ["Grados de libertad", datos.gl ?? "—"],
+          ["Grados de libertad", datos.gl === null || datos.gl === undefined ? "—" : glDobles(datos) ? textoGl(datos, 4) : datos.gl],
+          ["Hipótesis nula", datos.hipotesis?.h0 ?? spec.h0],
+          ["Hipótesis alternativa", datos.hipotesis?.h1 ?? spec.h1],
+          ["Método", `${datos.metodo}${datos.exacta ? " (exacta)" : ""}`],
           ["Intervalo inferior", datos.intervalo?.[0] ?? "—"],
           ["Intervalo superior", datos.intervalo?.[1] ?? "—"],
           ["Conclusión", datos.conclusion],
@@ -710,7 +801,7 @@ export async function montar(host, parametro) {
       try {
         await api.exportar({
           formato,
-          titulo: `${spec.nombre} · AmPu 3.1`,
+          titulo: `${spec.nombre} · AmPu 3.2`,
           resumen,
           tablas,
           figura: cfg
@@ -728,7 +819,7 @@ export async function montar(host, parametro) {
         });
         toast(`Archivo ${formato.toUpperCase()} generado`, { tipo: "ok" });
       } catch (error) {
-        if (!esCancelacion(error)) toast(error.message, { tipo: "error" });
+        if (!esCancelacion(error)) toast(textoError(error), { tipo: "error" });
       }
     });
   }
@@ -746,7 +837,7 @@ export async function montar(host, parametro) {
       renderInicial(spec)
     );
     anunciar(`Prueba ${spec.nombre} seleccionada.`);
-    window.scrollTo({ top: 0, behavior: "smooth" });
+    window.scrollTo({ top: 0, behavior: comportamientoScroll() });
   }
 
   renderLista();

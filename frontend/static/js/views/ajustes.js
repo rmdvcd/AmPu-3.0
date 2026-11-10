@@ -4,6 +4,7 @@ import {
   boton,
   campo,
   alerta,
+  textoError,
   toast,
   confirmar,
   copiar,
@@ -271,7 +272,7 @@ export async function montar(host) {
       toast("Preferencias importadas", { tipo: "ok" });
       anunciar("Preferencias importadas correctamente.");
     } catch (error) {
-      toast(error.message, { tipo: "error" });
+      toast(textoError(error), { tipo: "error" });
     } finally {
       entradaArchivo.value = "";
     }
@@ -282,7 +283,7 @@ export async function montar(host) {
     icono: "descargar",
     onClick: () => {
       const contenido = JSON.stringify(
-        { app: "AmPu", version: salud?.version || "3.1.0", exportado: new Date().toISOString(), prefs: { ...prefs }, historial: historial() },
+        { app: "AmPu", version: salud?.version || "3.2.0", exportado: new Date().toISOString(), prefs: { ...prefs }, historial: historial() },
         null,
         2
       );
@@ -361,7 +362,7 @@ export async function montar(host) {
         toast("Motor disponible", { tipo: "ok" });
       } catch (error) {
         salud = null;
-        toast(error.message, { tipo: "error" });
+        toast(textoError(error), { tipo: "error" });
       }
       pintarSalud();
     });
@@ -443,7 +444,7 @@ export async function montar(host) {
   });
 
   const panelAcerca = panel({
-    titulo: "Acerca de AmPu 3.1",
+    titulo: "Acerca de AmPu 3.2",
     subtitulo: "Asistente matemático local para probabilidad, estadística y muestreo.",
     icono: "info",
     contenido: el(
@@ -470,7 +471,7 @@ export async function montar(host) {
           onClick: () =>
             copiar(
               [
-                `AmPu ${salud?.version || "3.1.0"}`,
+                `AmPu ${salud?.version || "3.2.0"}`,
                 `Motor ${salud?.motor || "desconocido"}`,
                 `Tema ${prefs.tema} (${temaResuelto()})`,
                 `Densidad ${prefs.densidad}`,

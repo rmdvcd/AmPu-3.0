@@ -87,6 +87,10 @@ def construir(build_dir: Path) -> Path:
         "werkzeug",
         "--hidden-import",
         "markdown",
+        "--hidden-import",
+        "waitress",
+        "--hidden-import",
+        "mpmath",
         str(build_dir / "main.py"),
     ]
     if os.name == "nt":
@@ -111,7 +115,7 @@ def construir(build_dir: Path) -> Path:
 
 def main() -> None:
     if not (VENDOR_DIR / "PyInstaller").exists():
-        raise SystemExit("PyInstaller no está en vendor/. Instala las dependencias con: pip install -r requirements.txt")
+        raise SystemExit("PyInstaller no está en vendor/. Instala las dependencias con: pip install --target vendor -r requirements-build.txt")
     construir(preparar_entorno())
 
 

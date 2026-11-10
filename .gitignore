@@ -7,6 +7,8 @@ venv/
 
 # Entorno local
 .ampu_data/
+.ampu/
+node_modules/
 *.log
 *.tmp
 
@@ -15,6 +17,7 @@ build_temp/
 build/
 dist/*.exe
 dist/ampu_portable_3_0
+dist/ampu_portable*
 *.spec
 
 # Pruebas y cobertura
@@ -25,3 +28,7 @@ htmlcov/
 # Sistema
 .DS_Store
 Thumbs.db
+
+# Dependencias instaladas en local; no se versionan:
+#   pip install --target vendor --no-compile -r requirements.txt
+vendor/

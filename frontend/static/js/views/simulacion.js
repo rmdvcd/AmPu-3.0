@@ -13,12 +13,17 @@ import {
   fmtNum,
   fmtP,
   fmtPorcentaje,
+  fmtIntervalo,
+  errorEnCampo,
+  textoError,
+  avisosMotor,
   anunciar,
   botonesExportar,
 } from "../ui.js";
 import { icono } from "../icons.js";
 import { dibujar } from "../chart.js";
 import { api, esCancelacion } from "../api.js";
+import { fmtEntrada, leerNumero, leerSerie } from "../entrada.js";
 import { cargarMeta, navegar, registrarHistorial, transito } from "../store.js";
 import { crearCamposParametros, resumenParametros } from "../params.js";
 
@@ -39,19 +44,56 @@ const FUNCIONES_INTEGRAL = [
 
 const MODELOS_AJUSTE = ["normal", "exponencial", "gamma", "weibull", "lognormal", "beta"];
 
-const EJEMPLO_AJUSTE = "12.1 11.4 12.8 12.3 11.9 12.6 12.2 11.7 12.9 12.4 12.0 11.8 12.5 12.7 11.6 12.3 12.1 12.8";
-const EJEMPLO_QQ = "0.21 0.34 0.48 0.55 0.61 0.72 0.69 0.81 0.76 0.88 0.91 0.84";
+const EJEMPLO_AJUSTE = "12,1 11,4 12,8 12,3 11,9 12,6 12,2 11,7 12,9 12,4 12,0 11,8 12,5 12,7 11,6 12,3 12,1 12,8";
+const EJEMPLO_QQ = "0,21 0,34 0,48 0,55 0,61 0,72 0,69 0,81 0,76 0,88 0,91 0,84";
 
 function numero(valor) {
   if (valor === null || valor === undefined || valor === "") return null;
-  const n = Number(String(valor).replace(",", "."));
-  return Number.isFinite(n) ? n : null;
+  const lectura = leerNumero(valor);
+  return lectura.error || lectura.vacio ? null : lectura.valor;
 }
 
-function parsearSerie(texto) {
-  const tokens = String(texto || "").split(/[\s,;]+/).filter(Boolean);
-  const valores = tokens.map((t) => Number(t.replace(",", ".")));
-  return { valores, invalidos: tokens.filter((_, i) => !Number.isFinite(valores[i])), n: tokens.length };
+/** Anchura de clase de un histograma, en unidades del eje. */
+function anchoClase(histograma) {
+  const { bordes, centros } = histograma || {};
+  if (Array.isArray(bordes) && bordes.length > 1) return bordes[1] - bordes[0];
+  if (Array.isArray(centros) && centros.length > 1) return centros[1] - centros[0];
+  return 1;
+}
+
+/** Texto de una serie llegada de otra vista, con la convención de entrada. */
+function textoDeSerie(valor) {
+  if (Array.isArray(valor)) return valor.map((v) => (typeof v === "number" ? fmtEntrada(v) : String(v))).join(" ");
+  return valor ?? "";
+}
+
+/**
+ * Valida un campo de serie con el mismo lector que el motor.
+ * Devuelve la lectura, o null si dejó el error marcado en el campo.
+ */
+function serieValida(campoDatos, minimo) {
+  campoDatos.limpiarError();
+  const lectura = leerSerie(campoDatos.texto());
+  if (lectura.error) {
+    campoDatos.setError(lectura.error.mensaje);
+    campoDatos.enfocar();
+    return null;
+  }
+  if (lectura.valores.length < minimo) {
+    campoDatos.setError(`Introduce al menos ${minimo} observaciones (se han leído ${lectura.valores.length}).`);
+    campoDatos.enfocar();
+    return null;
+  }
+  return lectura;
+}
+
+/** Muestra un error del motor: junto al campo culpable si se conoce, y siempre en el panel. */
+function mostrarErrorMotor(resultadoHost, error, titulo, campos = {}) {
+  const enCampo = errorEnCampo(error, campos);
+  resultadoHost.replaceChildren(
+    alerta({ tipo: "error", titulo: error.tipo === "timeout" ? "La simulación tardó demasiado" : enCampo ? `${titulo}: revisa el campo marcado` : titulo, texto: textoError(error) })
+  );
+  anunciar(`Error: ${error.message}`);
 }
 
 function panelEspera(titulo, texto) {
@@ -72,7 +114,7 @@ async function exportarSimulacion(botonNodo, { titulo, resumen, tablas, figura, 
     try {
       await api.exportar({
         formato,
-        titulo: `${titulo} · AmPu 3.1`,
+        titulo: `${titulo} · AmPu 3.2`,
         resumen,
         tablas,
         figura,
@@ -81,7 +123,7 @@ async function exportarSimulacion(botonNodo, { titulo, resumen, tablas, figura, 
       });
       toast(`Archivo ${formato.toUpperCase()} generado`, { tipo: "ok" });
     } catch (error) {
-      if (!esCancelacion(error)) toast(error.message, { tipo: "error" });
+      if (!esCancelacion(error)) toast(textoError(error), { tipo: "error" });
     }
   });
 }
@@ -138,7 +180,7 @@ function herramientaPi(pendiente) {
       render(datos);
       registrarHistorial({ titulo: "Monte Carlo · π", detalle: `${fmtNum(datos.estimacion.valor, { decimales: 6 })} ± ${fmtNum(datos.estimacion.error_estandar, { decimales: 6 })}`, ruta: "simulacion/pi", tipo: "simulacion", icono: "pi" });
     } catch (error) {
-      if (!esCancelacion(error)) resultadoHost.replaceChildren(alerta({ tipo: "error", titulo: "No se pudo simular", texto: error.message }));
+      if (!esCancelacion(error)) mostrarErrorMotor(resultadoHost, error, "No se pudo simular", { n: campoN, semilla: campoSemilla });
     } finally {
       botonCalcular.cargando(false);
     }
@@ -179,13 +221,13 @@ function herramientaPi(pendiente) {
             el(
               "div",
               { class: "rejilla rejilla--kpi" },
-              kpi({ etiqueta: "Intervalo", valor: `[${fmtNum(datos.estimacion.intervalo[0], { decimales: 5 })}, ${fmtNum(datos.estimacion.intervalo[1], { decimales: 5 })}]`, detalle: fmtPorcentaje(Number(campoConfianza.valor())), tono: "marca" }),
+              kpi({ etiqueta: "Intervalo", valor: fmtIntervalo(datos.estimacion.intervalo, { decimales: 5 }), detalle: `${fmtPorcentaje(datos.confianza ?? Number(campoConfianza.valor()), 0)} de confianza`, tono: "marca" }),
               kpi({ etiqueta: "Error estándar", valor: fmtNum(datos.estimacion.error_estandar, { decimales: 6 }), detalle: "precisión de la media" })
             ),
             alerta({ tipo: "info", texto: `Cada punto cae dentro del cuarto de círculo con probabilidad π/4. La fracción observada es ${fmtNum(datos.estimacion.valor / 4, { decimales: 6 })}.` })
           ),
         }),
-        panel({ titulo: "Convergencia", subtitulo: "La banda representa el intervalo de confianza al 95 %.", icono: "grafico", contenido: graf })
+        panel({ titulo: "Convergencia", subtitulo: `La banda representa el intervalo de confianza al ${fmtPorcentaje(datos.confianza ?? 0.95, 0)}.`, icono: "grafico", contenido: graf })
       )
     );
   }
@@ -218,8 +260,14 @@ function herramientaIntegral(pendiente) {
       campoN.setError("Usa un entero entre 100 y 200 000.");
       return;
     }
+    for (const c of [campoA, campoB, campoN]) c.limpiarError();
+    if (!campoA.validar() || !campoB.validar()) return;
     const a = campoA.valor();
     const b = campoB.valor();
+    if ((a === null) !== (b === null)) {
+      (a === null ? campoA : campoB).setError("Indica los dos límites o deja los dos vacíos.");
+      return;
+    }
     if (a !== null && b !== null && a >= b) {
       campoB.setError("b debe ser mayor que a.");
       return;
@@ -238,7 +286,7 @@ function herramientaIntegral(pendiente) {
       render(datos);
       registrarHistorial({ titulo: "Monte Carlo · integral", detalle: `${datos.etiqueta}: ${fmtNum(datos.estimacion.valor, { decimales: 5 })}`, ruta: "simulacion/integral", tipo: "simulacion", icono: "sigma" });
     } catch (error) {
-      if (!esCancelacion(error)) resultadoHost.replaceChildren(alerta({ tipo: "error", titulo: "No se pudo integrar", texto: error.message }));
+      if (!esCancelacion(error)) mostrarErrorMotor(resultadoHost, error, "No se pudo integrar", { a: campoA, b: campoB, n: campoN, semilla: campoSemilla });
     } finally {
       botonCalcular.cargando(false);
     }
@@ -263,7 +311,7 @@ function herramientaIntegral(pendiente) {
         { class: "pila" },
         panel({
           titulo: `Integral de ${datos.etiqueta}`,
-          subtitulo: `Intervalo [${fmtNum(datos.intervalo_integracion[0])}, ${fmtNum(datos.intervalo_integracion[1])}] · ${datos.nota}`,
+          subtitulo: `Integral en ${fmtIntervalo(datos.intervalo_integracion)} · ${datos.nota}`,
           icono: "sigma",
           acciones: [
             ...botonesExportar(["pdf", "xlsx", "png", "csv"], (formato, nodo) =>
@@ -282,10 +330,10 @@ function herramientaIntegral(pendiente) {
             el(
               "div",
               { class: "rejilla rejilla--kpi" },
-              kpi({ etiqueta: "Valor exacto", valor: fmtNum(datos.referencia.valor, { decimales: 6 }), detalle: "referencia analítica" }),
+              kpi({ etiqueta: "Valor exacto", valor: fmtNum(datos.referencia.valor, { decimales: 6 }), detalle: datos.referencia.expresion || "referencia analítica" }),
               kpi({ etiqueta: "Error absoluto", valor: fmtNum(datos.error_absoluto, { decimales: 6 }), detalle: "estimación frente a exacto", tono: "marca" }),
               kpi({ etiqueta: "Error estándar", valor: fmtNum(datos.estimacion.error_estandar, { decimales: 6 }), detalle: "variabilidad del estimador" }),
-              kpi({ etiqueta: "Intervalo", valor: `[${fmtNum(datos.estimacion.intervalo[0], { decimales: 5 })}, ${fmtNum(datos.estimacion.intervalo[1], { decimales: 5 })}]`, detalle: "95 % de confianza" })
+              kpi({ etiqueta: "Intervalo", valor: fmtIntervalo(datos.estimacion.intervalo, { decimales: 5 }), detalle: `${fmtPorcentaje(datos.confianza ?? 0.95, 0)} de confianza` })
             )
           ),
         }),
@@ -297,7 +345,7 @@ function herramientaIntegral(pendiente) {
   botonCalcular.addEventListener("click", ejecutar);
   resultadoHost.append(panelEspera("Integra por muestreo", "El método promedia f(x) sobre puntos uniformes y multiplica por la longitud del intervalo."));
   return {
-    nodo: el("div", { class: "pila" }, panelControles("Integración Monte Carlo", "Elige una de las funciones de referencia. Si dejas a y b vacíos se usan los límites naturales de cada ejemplo.", [campoFuncion, campoA, campoB, campoN, campoSemilla], el("div", { class: "fila" }, botonCalcular)), resultadoHost),
+    nodo: el("div", { class: "pila" }, panelControles("Integración Monte Carlo", "Elige una de las funciones de referencia. Si dejas a y b vacíos se usan los límites naturales de cada ejemplo; con otros límites, el valor exacto se recalcula para ese intervalo.", [campoFuncion, campoA, campoB, campoN, campoSemilla], el("div", { class: "fila" }, botonCalcular)), resultadoHost),
     ejecutar,
   };
 }
@@ -363,7 +411,7 @@ function herramientaMuestra(pendiente, metaDatos) {
       render(datos, validacion.valores, modeloUsado, semillaUsada);
       registrarHistorial({ titulo: `Simulación · ${modeloUsado.nombre}`, detalle: `${datos.n} observaciones · ${resumenParametros(modeloUsado, validacion.valores)}`, ruta: "simulacion/muestra", tipo: "simulacion", icono: "distribuciones" });
     } catch (error) {
-      if (!esCancelacion(error)) resultadoHost.replaceChildren(alerta({ tipo: "error", titulo: "No se pudo generar la muestra", texto: error.message }));
+      if (!esCancelacion(error)) mostrarErrorMotor(resultadoHost, error, "No se pudo generar la muestra", { ...parametros.campos, n: campoN, semilla: campoSemilla });
     } finally {
       botonCalcular.cargando(false);
     }
@@ -373,14 +421,15 @@ function herramientaMuestra(pendiente, metaDatos) {
     const graf = el("div");
     setTimeout(() => {
       dibujar(graf, {
-        tipo: "barras",
-        categorias: datos.histograma.centros.map((c) => fmtNum(c, { decimales: 2 })),
         series: [
-          { nombre: "Histograma", x: datos.histograma.centros.map((_, i) => i), y: datos.histograma.densidad, tipo: "barra", color: "var(--grafico-2)" },
-          { nombre: "Densidad teórica", x: datos.teorica.x, y: datos.teorica.y, tipo: "linea", color: "var(--grafico-4)" },
+          { nombre: "Histograma", x: datos.histograma.centros, y: datos.histograma.densidad, tipo: "barra", anchoDatos: anchoClase(datos.histograma), color: "var(--grafico-2)" },
+          datos.discreta
+            ? { nombre: "Masa teórica", x: datos.teorica.x, y: datos.teorica.y, tipo: "dispersion", forma: "rombo", opacidad: 1, color: "var(--grafico-4)" }
+            : { nombre: "Densidad teórica", x: datos.teorica.x, y: datos.teorica.y, tipo: "linea", color: "var(--grafico-4)" },
         ],
         xlabel: "x",
-        ylabel: "Densidad",
+        ylabel: datos.discreta ? "Frecuencia relativa por valor" : "Densidad",
+        zoom: false,
         altura: 300,
         yCero: true,
         ariaLabel: `Histograma de la muestra simulada y densidad teórica de ${datos.nombre}`,
@@ -426,7 +475,7 @@ function herramientaMuestra(pendiente, metaDatos) {
               kpi({ etiqueta: "Media", valor: fmtNum(datos.resumen.media, { decimales: 4 }), detalle: "muestral", tono: "marca" }),
               kpi({ etiqueta: "Mediana", valor: fmtNum(datos.resumen.mediana, { decimales: 4 }), detalle: "percentil 50" }),
               kpi({ etiqueta: "Desviación", valor: fmtNum(datos.resumen.desviacion, { decimales: 4 }), detalle: "muestral (n−1)" }),
-              kpi({ etiqueta: "Rango", valor: `[${fmtNum(datos.resumen.minimo, { decimales: 3 })}, ${fmtNum(datos.resumen.maximo, { decimales: 3 })}]`, detalle: `IQR [${fmtNum(datos.resumen.q1, { decimales: 3 })}, ${fmtNum(datos.resumen.q3, { decimales: 3 })}]` })
+              kpi({ etiqueta: "Mínimo y máximo", valor: fmtIntervalo([datos.resumen.minimo, datos.resumen.maximo], { decimales: 3 }), detalle: `Q1 y Q3: ${fmtIntervalo([datos.resumen.q1, datos.resumen.q3], { decimales: 3 })}` })
             ),
             alerta({ tipo: "info", texto: datos.nota })
           ),
@@ -493,7 +542,7 @@ function herramientaAjuste(pendiente, metaDatos) {
     etiqueta: "Datos observados",
     tipo: "serie",
     filas: 5,
-    valor: pendiente?.datos ? (Array.isArray(pendiente.datos) ? pendiente.datos.join(" ") : pendiente.datos) : EJEMPLO_AJUSTE,
+    valor: pendiente?.datos ? textoDeSerie(pendiente.datos) : EJEMPLO_AJUSTE,
     requerido: true,
     ayuda: "Al menos 5 observaciones. Los parámetros se estiman por máxima verosimilitud.",
   });
@@ -502,22 +551,15 @@ function herramientaAjuste(pendiente, metaDatos) {
   const botonCalcular = boton("Ajustar", { icono: "reproducir", dataset: { accionPrimaria: "true" } });
 
   async function ejecutar() {
-    const serie = parsearSerie(campoDatos.texto());
-    if (serie.n < 5) {
-      campoDatos.setError("Introduce al menos 5 observaciones numéricas.");
-      return;
-    }
-    if (serie.invalidos.length) {
-      campoDatos.setError(`Valor no numérico: «${serie.invalidos[0]}».`);
-      return;
-    }
+    const serie = serieValida(campoDatos, 5);
+    if (!serie) return;
     botonCalcular.cargando(true);
     try {
-      const datos = await api.post("/api/simulacion", { tipo: "ajuste", clave: campoModelo.valor(), datos: serie.valores, semilla: campoSemilla.valor() });
+      const datos = await api.post("/api/simulacion", { tipo: "ajuste", clave: campoModelo.valor(), datos: campoDatos.texto(), semilla: campoSemilla.valor() });
       render(datos);
       registrarHistorial({ titulo: `Ajuste · ${datos.clave}`, detalle: `AIC ${fmtNum(datos.aic, { decimales: 2 })} · KS p = ${fmtP(datos.p_ks)}`, ruta: "simulacion/ajuste", tipo: "simulacion", icono: "objetivo" });
     } catch (error) {
-      if (!esCancelacion(error)) resultadoHost.replaceChildren(alerta({ tipo: "error", titulo: "No se pudo ajustar", texto: error.message }));
+      if (!esCancelacion(error)) mostrarErrorMotor(resultadoHost, error, "No se pudo ajustar", { datos: campoDatos, semilla: campoSemilla });
     } finally {
       botonCalcular.cargando(false);
     }
@@ -527,12 +569,11 @@ function herramientaAjuste(pendiente, metaDatos) {
     const graf = el("div");
     setTimeout(() => {
       dibujar(graf, {
-        tipo: "barras",
-        categorias: datos.histograma.centros.map((c) => fmtNum(c, { decimales: 2 })),
         series: [
-          { nombre: "Histograma", x: datos.histograma.centros.map((_, i) => i), y: datos.histograma.densidad, tipo: "barra", color: "var(--grafico-2)" },
+          { nombre: "Histograma", x: datos.histograma.centros, y: datos.histograma.densidad, tipo: "barra", anchoDatos: anchoClase(datos.histograma), color: "var(--grafico-2)" },
           { nombre: "Modelo ajustado", x: datos.curva.x, y: datos.curva.y, tipo: "linea", color: "var(--grafico-4)" },
         ],
+        zoom: false,
         xlabel: "x",
         ylabel: "Densidad",
         altura: 290,
@@ -541,7 +582,7 @@ function herramientaAjuste(pendiente, metaDatos) {
       });
     }, 0);
 
-    const filasParametros = Object.entries(datos.parametros || {}).map(([k, v]) => [k, Array.isArray(v) ? v.map((x) => fmtNum(x)).join(", ") : v]);
+    const filasParametros = Object.entries(datos.parametros || {}).map(([k, v]) => [k, Array.isArray(v) ? v.map((x) => fmtNum(x)).join(" · ") : v]);
     resultadoHost.replaceChildren(
       el(
         "div",
@@ -647,7 +688,7 @@ function herramientaQQ(pendiente, metaDatos) {
     etiqueta: "Datos observados",
     tipo: "serie",
     filas: 5,
-    valor: pendiente?.datos ? (Array.isArray(pendiente.datos) ? pendiente.datos.join(" ") : pendiente.datos) : EJEMPLO_QQ,
+    valor: pendiente?.datos ? textoDeSerie(pendiente.datos) : EJEMPLO_QQ,
     requerido: true,
     ayuda: "Al menos 3 observaciones para comparar cuantiles.",
   });
@@ -662,15 +703,8 @@ function herramientaQQ(pendiente, metaDatos) {
   });
 
   async function ejecutar() {
-    const serie = parsearSerie(campoDatos.texto());
-    if (serie.n < 3) {
-      campoDatos.setError("Introduce al menos 3 observaciones.");
-      return;
-    }
-    if (serie.invalidos.length) {
-      campoDatos.setError(`Valor no numérico: «${serie.invalidos[0]}».`);
-      return;
-    }
+    const serie = serieValida(campoDatos, 3);
+    if (!serie) return;
     const validacion = parametros.validar();
     if (!validacion.ok) {
       toast("Revisa los parámetros del modelo", { tipo: "error" });
@@ -680,11 +714,11 @@ function herramientaQQ(pendiente, metaDatos) {
     const modeloUsado = modelo;
     const parametrosUsados = validacion.valores;
     try {
-      const datos = await api.post("/api/simulacion", { tipo: "qq", clave: modeloUsado.clave, parametros: parametrosUsados, datos: serie.valores });
+      const datos = await api.post("/api/simulacion", { tipo: "qq", clave: modeloUsado.clave, parametros: parametrosUsados, datos: campoDatos.texto() });
       render(datos, modeloUsado, parametrosUsados);
       registrarHistorial({ titulo: `QQ-plot · ${modeloUsado.nombre}`, detalle: `${datos.n} observaciones`, ruta: "simulacion/qq", tipo: "simulacion", icono: "dispersion" });
     } catch (error) {
-      if (!esCancelacion(error)) resultadoHost.replaceChildren(alerta({ tipo: "error", titulo: "No se pudo construir el QQ-plot", texto: error.message }));
+      if (!esCancelacion(error)) mostrarErrorMotor(resultadoHost, error, "No se pudo construir el QQ-plot", { ...parametros.campos, datos: campoDatos });
     } finally {
       botonCalcular.cargando(false);
     }
@@ -771,7 +805,7 @@ export async function montar(host, parametro) {
   try {
     metaDatos = await cargarMeta();
   } catch (error) {
-    host.append(alerta({ tipo: "error", titulo: "El motor no responde", texto: error.message }));
+    host.append(alerta({ tipo: "error", titulo: "El motor no responde", texto: textoError(error) }));
     return null;
   }
 
