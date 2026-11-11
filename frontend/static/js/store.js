@@ -67,10 +67,27 @@ export function temaResuelto(tema = prefs.tema) {
   return tema;
 }
 
+let restaurarTransicionesTema = null;
+
 export function aplicarPreferenciasVisuales() {
   const resuelto = temaResuelto();
-  document.documentElement.dataset.tema = resuelto;
-  document.documentElement.dataset.densidad = prefs.densidad;
+  const raiz = document.documentElement;
+  const cambiaTema = raiz.dataset.tema !== resuelto;
+  if (cambiaTema) {
+    // Evita interpolar fondos mientras la tinta ya pertenece al tema nuevo.
+    if (restaurarTransicionesTema !== null) cancelAnimationFrame(restaurarTransicionesTema);
+    raiz.dataset.cambiandoTema = "true";
+  }
+  raiz.dataset.tema = resuelto;
+  raiz.dataset.densidad = prefs.densidad;
+  if (cambiaTema) {
+    // Resolver estilos antes de devolver las transiciones de hover/foco.
+    raiz.getBoundingClientRect();
+    restaurarTransicionesTema = requestAnimationFrame(() => {
+      delete raiz.dataset.cambiandoTema;
+      restaurarTransicionesTema = null;
+    });
+  }
   const meta = document.querySelector('meta[name="theme-color"]');
   if (meta) meta.setAttribute("content", resuelto === "oscuro" ? "#0a151d" : "#0d3b3a");
   Object.assign(config, {

@@ -59,6 +59,8 @@ def construir(build_dir: Path) -> Path:
         "--onefile",
         "--name",
         APP_NAME,
+        "--icon",
+        str(build_dir / "frontend" / "static" / "favicon.ico"),
         "--paths",
         str(build_dir / "engine"),
         "--paths",

@@ -25,6 +25,11 @@ por una arquitectura modular:
 - **Diseño responsivo** y componentes reutilizables: paneles, KPIs, tablas con
   scroll, alertas, veredictos, pestañas, chips, formularios con validación y
   estados vacíos.
+- **Contraste en ambos temas**: texto, ayudas, placeholders, controles e
+  indicadores de carga con colores propios de cada variante. El cambio de tema
+  aplica fondo y tinta juntos, sin interpolar colores incompatibles.
+- **Icono original de AmPu 2.0** en la marca lateral, los favicons y el
+  empaquetado de Windows, conservando proporción, transparencia y colores.
 
 El detalle del rediseño está en
 [`README_REDISEÑO_AMPU_3_0.md`](README_REDISEÑO_AMPU_3_0.md). La auditoría de la
@@ -103,7 +108,8 @@ la publicas detrás de un proxy o con otro nombre:
 │   ├── index.html          # Shell de la aplicación
 │   └── static/
 │       ├── css/app.css     # Sistema de diseño, componentes y responsive
-│       ├── favicon.svg
+│       ├── favicon.svg · favicon.ico
+│       ├── img/icono_ampu.png # Original de AmPu 2.0
 │       └── js/
 │           ├── app.js      # Router, shell, paleta, ayuda y atajos
 │           ├── ui.js       # Componentes y formato numérico
@@ -178,23 +184,29 @@ node --test tests/test_*.mjs
 | `tests/test_regresiones.py` | Un caso por hallazgo de la auditoría (E1–E19), con su referencia |
 | `tests/test_entrada.py` · `test_entrada.mjs` | Los dos lectores de números contra `vectores_entrada.json` |
 | `tests/test_seguridad.py` | Cabeceras, anfitrión, origen y exportación sin fórmulas |
+| `tests/test_navegacion.py` | Barra lateral sin el bloque inferior duplicado de Ajustes, conservando la marca, la navegación y los accesos globales |
 | `tests/test_leyendas_exportacion.py` | Leyendas externas sin recortes ni solapamientos en PNG/PDF, con muchas series y nombres largos |
 | `tests/test_graficos.mjs` | Leyendas sin solapamientos a 180, 240, 360 y 760 px, en ambos temas, con nombres largos, zoom, conmutación de series y resumen del diagrama de caja |
+| `tests/test_temas.mjs` | Contraste calculado de texto (≥ 4,5:1), controles y gráficos (≥ 3:1), hover/foco/carga real, placeholders, avisos, series ocultas, fotogramas del cambio de tema, sistema y persistencia |
+| `tests/test_icono.py` | PNG original idéntico al de AmPu 2.0, favicons, tamaños y transparencia del ICO, regeneración local y comando de PyInstaller con el icono incluido (sin compilar el ejecutable) |
 
-La comprobación de gráficos usa Chromium real y es opcional; si no está instalado
-`playwright-core`, se marca como omitida sin afectar a las pruebas del motor.
-Para activarla (solo desarrollo, sin dependencias nuevas para ejecutar AmPu):
+Las comprobaciones de gráficos y temas usan Chromium real y son opcionales; si
+no está instalado `playwright-core`, se marcan como omitidas sin afectar a las
+pruebas del motor. Para activarlas (solo desarrollo, sin dependencias nuevas
+para ejecutar AmPu):
 
 ```bash
 npm install --no-save --package-lock=false playwright-core
 npx playwright-core install chromium
-node --test tests/test_graficos.mjs
+node --test tests/test_graficos.mjs tests/test_temas.mjs
 ```
 
-No necesita arrancar la app: sirve los componentes estáticos en un servidor de
-prueba temporal. Si ya tienes Chromium, puedes indicar su ruta con
+No necesitan arrancar la app: sirven los componentes estáticos en servidores de
+prueba temporales. Si ya tienes Chromium, puedes indicar su ruta con
 `AMPU_CHROMIUM=/ruta/a/chromium` (y argumentos adicionales mediante
-`AMPU_CHROMIUM_ARGS`, una lista JSON).
+`AMPU_CHROMIUM_ARGS`, una lista JSON). Las pruebas de contraste de componentes
+usan superficies sólidas; no sustituyen la revisión visual de degradados,
+imágenes ni de todas las combinaciones posibles de datos.
 
 Para una revisión manual: abre cada sección desde la barra lateral, ejecuta el
 ejemplo, cambia de tema, usa `Ctrl K`, `?`, `Ctrl Enter` y comprueba que el
@@ -212,6 +224,16 @@ PYTHONPATH=vendor python3 build_exe.py
 En Windows genera `dist/ampu_portable_3_0.exe`; en Linux/macOS, un ejecutable sin
 extensión. El ejecutable incluye `frontend/`, `engine/` y las dependencias; el
 navegador se abre solo cuando `/api/salud` responde.
+
+El icono del `.exe` se incorpora con `--icon` al **recompilar en Windows**;
+no modifica ejecutables ya generados. Se usa el original de AmPu 2.0, también
+visible en la barra lateral y en los favicons. Su procedencia y hashes están en
+[`frontend/static/img/README.md`](frontend/static/img/README.md). Para regenerar
+el SVG autocontenido y el ICO multirresolución, sin descargas:
+
+```bash
+PYTHONPATH=vendor python3 scripts/generar_iconos.py
+```
 
 ## Privacidad y alcance
 

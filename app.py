@@ -997,6 +997,11 @@ def favicon():
     return send_from_directory(STATIC_DIR, "favicon.svg")
 
 
+@app.get("/favicon.ico")
+def favicon_ico():
+    return send_from_directory(STATIC_DIR, "favicon.ico")
+
+
 @app.get("/vendor/katex/<path:archivo>")
 def katex(archivo: str):
     return send_from_directory(RENDER_DIR, archivo, max_age=60 * 60 * 24 * 30)
