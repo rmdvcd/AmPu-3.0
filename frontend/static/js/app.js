@@ -5,7 +5,7 @@
 
 import { el, toast, modal, boton, anunciar, renderMath, comportamientoScroll } from "./ui.js";
 import { icono, hidratarIconos } from "./icons.js";
-import { api, cancelarCalculos, hayCalculosEnCurso } from "./api.js";
+import { cancelarCalculos, hayCalculosEnCurso } from "./api.js";
 import {
   cargarMeta,
   cicloTema,
@@ -39,7 +39,6 @@ const cerrarSidebar = document.getElementById("cerrar-sidebar");
 const barraCarga = document.getElementById("barra-carga");
 const migaActual = document.getElementById("miga-actual");
 const iconoTema = document.getElementById("icono-tema");
-const estadoMotor = document.getElementById("estado-motor");
 
 let destruirVista = null;
 let rutaRenderizada = "";
@@ -278,25 +277,6 @@ async function renderRuta(forzar = false) {
     toast("No se pudo cargar la sección", { tipo: "error" });
   } finally {
     if (miToken === tokenRuta) mostrarCarga(false);
-  }
-}
-
-/* ------------------------------------------------------------------ */
-/* Estado del motor                                                    */
-/* ------------------------------------------------------------------ */
-
-async function comprobarMotor() {
-  if (!estadoMotor) return;
-  const texto = estadoMotor.querySelector(".estado-motor__texto");
-  try {
-    const salud = await api.get("/api/salud");
-    estadoMotor.dataset.estado = "ok";
-    estadoMotor.title = `Motor ${salud.motor} · ${salud.distribuciones} distribuciones · ${salud.lecciones} lecciones`;
-    if (texto) texto.textContent = `Motor en línea · v${salud.version}`;
-  } catch (error) {
-    estadoMotor.dataset.estado = "error";
-    estadoMotor.title = error.message;
-    if (texto) texto.textContent = "Motor sin conexión";
   }
 }
 
@@ -579,12 +559,10 @@ function conectarEventos() {
 
   document.getElementById("abrir-buscador")?.addEventListener("click", abrirPaleta);
 
-  for (const id of ["abrir-ayuda", "boton-ayuda", "pie-ayuda"]) {
+  for (const id of ["boton-ayuda", "pie-ayuda"]) {
     document.getElementById(id)?.addEventListener("click", abrirAyuda);
   }
-  for (const id of ["abrir-preferencias", "pie-preferencias"]) {
-    document.getElementById(id)?.addEventListener("click", () => navegar("ajustes"));
-  }
+  document.getElementById("pie-preferencias")?.addEventListener("click", () => navegar("ajustes"));
   window.addEventListener("ampu:ayuda", abrirAyuda);
 
   document.addEventListener("keydown", (evento) => {
@@ -676,7 +654,6 @@ async function iniciar() {
   construirNav();
   aplicarSidebar();
   conectarEventos();
-  comprobarMotor();
 
   const { vista, parametro } = parsearHash();
   if (!vistaValida(vista)) {
