@@ -725,7 +725,7 @@ export function dibujar(host, cfg = {}) {
           },
         },
         muestraLeyenda(serie, cfg),
-        serie.nombre
+        el("span", { class: "leyenda__texto" }, serie.nombre)
       );
       leyenda.append(item);
     }
@@ -881,24 +881,6 @@ export function graficoCaja(host, datos) {
     if (v === null) continue;
     g.append(svg("circle", { cx: centro, cy: escY(v), r: 3.2, fill: "none", stroke: "var(--grafico-5)", "stroke-width": "1.4" }));
   }
-  const etiquetas = [
-    ["Máx.", datos.max],
-    ["Q3", datos.q3],
-    ["Mediana", datos.mediana],
-    ["Q1", datos.q1],
-    ["Mín.", datos.min],
-  ];
-  etiquetas.forEach(([etiqueta, valor], i) => {
-    const t = svg("text", {
-      class: "eje-texto",
-      x: margen.izquierda + anchoPlot - 4,
-      y: margen.arriba + 12 + i * 15,
-      "text-anchor": "end",
-      fill: "var(--texto-2)",
-    });
-    t.textContent = `${etiqueta}: ${fmtNum(valor, { decimales: 3 })}`;
-    g.append(t);
-  });
   g.append(svg("line", { class: "eje-linea", x1: margen.izquierda, x2: margen.izquierda + anchoPlot, y1: margen.arriba + altoPlot, y2: margen.arriba + altoPlot }));
   const atipicos = (datos.atipicos || []).map(numero).filter((v) => v !== null);
   nodoSvg.append(
@@ -909,6 +891,18 @@ export function graficoCaja(host, datos) {
     `tercer cuartil ${fmtNum(datos.q3)}, máximo ${fmtNum(datos.max)}. Bigotes de ${fmtNum(datos.bigote_inf)} a ${fmtNum(datos.bigote_sup)}. ` +
     `${atipicos.length} valores atípicos.`;
   host.append(nodoSvg);
+
+  /* Los estadísticos quedan fuera del trazado, incluso con cajas altas o valores largos. */
+  const etiquetas = [
+    ["Máximo", datos.max],
+    ["Q3", datos.q3],
+    ["Mediana", datos.mediana],
+    ["Q1", datos.q1],
+    ["Mínimo", datos.min],
+  ];
+  host.append(el("dl", { class: "grafico__resumen", "aria-label": "Resumen del diagrama de caja" },
+    etiquetas.map(([etiqueta, valor]) => el("div", {},
+      el("dt", {}, etiqueta), el("dd", {}, fmtNum(valor, { decimales: 3 }))))));
 
   /* Tabla de datos equivalente: lo mismo que el dibujo, en texto. */
   const filas = [

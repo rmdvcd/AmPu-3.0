@@ -166,10 +166,10 @@ valores infinitos viajan como `"∞"` y `"−∞"`; muchas respuestas incluyen
 ## Pruebas
 
 ```bash
-./scripts/probar.sh          # todo: Python (unittest) y analizador del navegador (Node)
+./scripts/probar.sh          # Python y Node; gráficos si Playwright está instalado
 
 PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=vendor python3 -m unittest discover -s tests -v
-node --test tests/test_entrada.mjs
+node --test tests/test_*.mjs
 ```
 
 | Archivo | Qué comprueba |
@@ -178,8 +178,23 @@ node --test tests/test_entrada.mjs
 | `tests/test_regresiones.py` | Un caso por hallazgo de la auditoría (E1–E19), con su referencia |
 | `tests/test_entrada.py` · `test_entrada.mjs` | Los dos lectores de números contra `vectores_entrada.json` |
 | `tests/test_seguridad.py` | Cabeceras, anfitrión, origen y exportación sin fórmulas |
+| `tests/test_leyendas_exportacion.py` | Leyendas externas sin recortes ni solapamientos en PNG/PDF, con muchas series y nombres largos |
+| `tests/test_graficos.mjs` | Leyendas sin solapamientos a 180, 240, 360 y 760 px, en ambos temas, con nombres largos, zoom, conmutación de series y resumen del diagrama de caja |
 
-Las pruebas no cubren el aspecto visual: no hay pruebas automáticas en navegador.
+La comprobación de gráficos usa Chromium real y es opcional; si no está instalado
+`playwright-core`, se marca como omitida sin afectar a las pruebas del motor.
+Para activarla (solo desarrollo, sin dependencias nuevas para ejecutar AmPu):
+
+```bash
+npm install --no-save --package-lock=false playwright-core
+npx playwright-core install chromium
+node --test tests/test_graficos.mjs
+```
+
+No necesita arrancar la app: sirve los componentes estáticos en un servidor de
+prueba temporal. Si ya tienes Chromium, puedes indicar su ruta con
+`AMPU_CHROMIUM=/ruta/a/chromium` (y argumentos adicionales mediante
+`AMPU_CHROMIUM_ARGS`, una lista JSON).
 
 Para una revisión manual: abre cada sección desde la barra lateral, ejecuta el
 ejemplo, cambia de tema, usa `Ctrl K`, `?`, `Ctrl Enter` y comprueba que el

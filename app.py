@@ -2250,9 +2250,11 @@ def _relacionados(clave: str) -> list[dict]:
 def _figura_export(payload: dict | None):
     if not payload or not payload.get("series"):
         return None
+    from textwrap import fill
+    from matplotlib.backends.backend_agg import FigureCanvasAgg
     from matplotlib.figure import Figure
 
-    fig = Figure(figsize=(8.4, 4.6), dpi=120, facecolor="white")
+    fig = Figure(figsize=(8.4, 4.6), dpi=120, facecolor="white", layout="constrained")
     ax = fig.add_subplot(111)
     colores = ["#0f766e", "#1d4ed8", "#b45309", "#7c3aed", "#be123c"]
     for i, serie in enumerate(payload["series"]):
@@ -2284,9 +2286,19 @@ def _figura_export(payload: dict | None):
     ax.set_axisbelow(True)
     for lado in ("top", "right"):
         ax.spines[lado].set_visible(False)
-    if any(s.get("nombre") for s in payload["series"]):
-        ax.legend(frameon=False, fontsize=8)
-    fig.tight_layout()
+    trazos, nombres = ax.get_legend_handles_labels()
+    if trazos:
+        columnas = min(3, len(nombres))
+        # Una franja propia bajo los ejes: nunca se dibuja sobre las series.
+        etiquetas = [fill(nombre, width=60 // columnas, break_on_hyphens=False) for nombre in nombres]
+        leyenda = fig.legend(trazos, etiquetas, loc="outside lower center", ncols=columnas,
+                             frameon=False, fontsize=8)
+        for texto in leyenda.get_texts():
+            texto.set_parse_math(False)  # Son nombres de la interfaz, no expresiones MathText.
+        renderer = FigureCanvasAgg(fig).get_renderer()
+        alto_leyenda = leyenda.get_window_extent(renderer).height / fig.dpi
+        # Más filas amplían la figura en vez de reducir el área de datos.
+        fig.set_figheight(fig.get_figheight() + alto_leyenda + .1)
     return fig
 
 
