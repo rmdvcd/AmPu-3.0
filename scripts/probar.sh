@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# Ejecuta toda la batería: API y motor (Python) y analizador de entrada del navegador (Node).
+# API y motor (Python), entrada (Node) y gráficos en Chromium si Playwright está instalado.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=vendor python3 -W ignore -m unittest discover -s tests "$@"
 if command -v node >/dev/null 2>&1; then
-  node --test tests/test_entrada.mjs
+  node --test tests/test_*.mjs
 else
-  echo "Node no está instalado: se omiten las pruebas del analizador del navegador." >&2
+  echo "Node no está instalado: se omiten las pruebas de entrada y gráficos del navegador." >&2
 fi
