@@ -45,26 +45,28 @@
     <div class="principal">
       <header class="barra-superior">
         <div class="barra-superior__izq">
-          <button class="icono-boton" id="alternar-sidebar" aria-label="Mostrar u ocultar el menú" aria-expanded="true" aria-controls="sidebar">
-            <svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
-          </button>
           <nav class="migas" id="migas" aria-label="Ubicación">
             <a href="#/inicio">AmPu</a>
             <span aria-hidden="true">/</span>
             <span id="miga-actual">Inicio</span>
           </nav>
         </div>
-        <div class="barra-superior__der">
+        <div class="barra-superior__centro">
           <button class="buscador-disparo" id="abrir-buscador" aria-label="Buscar herramientas, modelos y lecciones">
             <span data-icono="buscar" aria-hidden="true"></span>
-            <span class="buscador-disparo__texto">Buscar…</span>
+            <span class="buscador-disparo__texto">Buscar herramientas, modelos y lecciones…</span>
             <kbd class="kbd" data-atajo="buscar">Ctrl K</kbd>
           </button>
+        </div>
+        <div class="barra-superior__der">
           <button class="icono-boton" id="alternar-tema" aria-label="Cambiar tema" title="Cambiar tema">
             <span class="icono-tema" id="icono-tema" aria-hidden="true"></span>
           </button>
           <button class="icono-boton" id="boton-ayuda" aria-label="Abrir ayuda" title="Atajos y ayuda">
             <span data-icono="ayuda" aria-hidden="true"></span>
+          </button>
+          <button class="icono-boton" id="alternar-sidebar" aria-label="Mostrar u ocultar el menú" aria-expanded="true" aria-controls="sidebar" title="Menú de navegación">
+            <svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
           </button>
         </div>
       </header>

@@ -548,7 +548,15 @@ function conectarEventos() {
     }
   });
 
-  cerrarSidebar?.addEventListener("click", () => abrirSidebarMovil(false));
+  cerrarSidebar?.addEventListener("click", () => {
+    if (window.innerWidth <= 900) {
+      abrirSidebarMovil(false);
+    } else {
+      aplicacion.classList.add("sidebar-plegada");
+      botonSidebar?.setAttribute("aria-expanded", "false");
+      guardarPrefs({ sidebar: false }, { silencioso: true });
+    }
+  });
   velo?.addEventListener("click", () => abrirSidebarMovil(false));
 
   document.getElementById("alternar-tema")?.addEventListener("click", () => {

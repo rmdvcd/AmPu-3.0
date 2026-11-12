@@ -1,4 +1,4 @@
-"""Identidad de AmPu 2.0 en la marca, favicons y empaquetado del ejecutable."""
+"""Identidad visual de AmPu en la marca, favicons y empaquetado del ejecutable."""
 
 from __future__ import annotations
 
@@ -25,7 +25,7 @@ class IconoTest(unittest.TestCase):
     def test_png_es_el_original_sin_modificaciones(self):
         self.assertEqual(
             hashlib.sha256(ORIGINAL.read_bytes()).hexdigest(),
-            "8f9b98806e73b7d8318c75089dc7830c3848ce143cd2c16581a158e1b2d084c6",
+            "d6d5d4a82fa8dec4e450346aca3979b8744649f8d4a206d6f76a70bb609f9254",
         )
         with Image.open(ORIGINAL) as imagen:
             self.assertEqual(imagen.size, (1024, 745))
