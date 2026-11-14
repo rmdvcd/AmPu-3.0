@@ -2,7 +2,7 @@
 
 ## Definición formal
 
-Extiende Neyman penalizando estratos cuyo coste por observación es mayor.
+Distribuye la muestra entre estratos usando tamaño, desviación esperada y coste por observación. La interfaz normaliza los pesos al tamaño total solicitado.
 
 ## Parámetros y rango
 
@@ -12,42 +12,26 @@ Extiende Neyman penalizando estratos cuyo coste por observación es mayor.
 | `S_h` | Desviación esperada |
 | `c_h` | Coste positivo por unidad |
 
-
-## Función, estadístico o regla de selección
+## Fórmula y procedimiento
 
 $$
 n_h\approx n\frac{N_hS_h/\sqrt{c_h}}{\sum_j N_jS_j/\sqrt{c_j}}
 $$
 
-## Función de distribución acumulada (CDF)
+## Qué optimiza y qué no
 
-CDF del indicador de inclusión o aproximación de diseño; no existe una única CDF de toda la técnica.
-
-$$
-P(I_{hi}\le t)=\begin{cases}0,&t<0\\1-n_h/N_h,&0\le t<1\\1,&t\ge1\end{cases}
-$$
-
-## Media, varianza y desviación estándar
-
-$$
-\operatorname{E}[I_{hi}]=n_h/N_h,\quad\operatorname{Var}(I_{hi})=(n_h/N_h)(1-n_h/N_h)
-$$
-
-Si no se explicita $\sigma=\sqrt{\operatorname{Var}}$, se obtiene como raíz cuadrada de la varianza; cuando no existe, no debe reportarse un valor numérico.
+La regla $n_h\propto N_hS_h/\sqrt{c_h}$ corresponde a la asignación de coste óptimo bajo una restricción presupuestaria. AmPu normaliza esos pesos a un $n$ total indicado: es una asignación ponderada por costes, no un optimizador de presupuesto. Si solo se fija $n$ y se ignoran costes, la regla de varianza mínima es Neyman.
 
 ## Propiedades y casos especiales
 
-La fórmula es una asignación con n fijado. La optimización bajo presupuesto fijo es distinta; registrar costes si existen.
-
-![Esquema de Asignación óptima con costes](../imagenes/muestreo.png)
-
-*Figura 1. Representación orientativa del procedimiento o de su distribución de referencia.*
+Se requieren costes positivos. Si los costes son iguales, los pesos se reducen a Neyman. El redondeo de cuotas debe conservar el tamaño total y respetar la capacidad de cada estrato.
 
 ## Ejemplo resuelto, paso a paso
 
-1. Use $(N_1,S_1,c_1)=(100,8,1)$ y $(N_2,S_2,c_2)=(200,4,4)$.
-2. Los pesos son 800 y 400.
-3. Para $n=60$, los tamaños son 40 y 20; seleccione sin reemplazo en cada estrato.
+1. **Datos.** Usa A: $(N,S,c)=(100;8;1)$ y B: $(200;4;4)$, con tamaño total 60.
+2. **Pesos de coste.** $N_AS_A/\sqrt{c_A}=800$ y $N_BS_B/\sqrt{c_B}=400$.
+3. **Asignación.** Al normalizar para sumar 60, se obtienen **40** unidades de A y **20** de B. Selecciona sin reemplazo, con semilla 42.
+4. **Interpretación.** AmPu normaliza estos pesos a un tamaño total fijado. No resuelve un presupuesto monetario fijo: ese problema determina además el tamaño total óptimo.
 
 ## Referencias
 

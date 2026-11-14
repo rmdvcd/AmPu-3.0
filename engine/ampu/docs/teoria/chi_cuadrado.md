@@ -2,15 +2,13 @@
 
 ## Definición formal
 
-Suma de cuadrados de $\nu$ normales estándar independientes. En AmPu 3.1 se parametriza exactamente como en `scipy.stats`;
-los eventos fuera del soporte reciben masa/densidad 0.
+Para $\nu$ entero positivo, es la suma de cuadrados de $\nu$ normales estándar independientes. Su extensión a cualquier $\nu>0$ es una gamma de forma $\nu/2$ y escala 2.
 
 ## Parámetros y rango
 
-| Parámetro | Significado | Rango | Valor de ejemplo |
+| Parámetro | Significado | Valores admitidos | Ejemplo |
 |---|---|---|---|
-| `gl` | Grados de libertad | > 0; sin límite | `5.0` |
-
+| `gl` | Grados de libertad | > 0 | 5 |
 
 ## Función de densidad (PDF)
 
@@ -24,26 +22,13 @@ $$
 F(x)=\frac{\gamma(\nu/2,x/2)}{\Gamma(\nu/2)}
 $$
 
-En general, la CDF es $F(x)=P(X\le x)$. Para una variable continua,
-$P(a\le X\le b)=F(b)-F(a)$; para una discreta los extremos se incluyen
-según los saltos de su CDF. Para una cola superior, consulte la función de supervivencia; no sume densidades continuas.
+La acumulada es $F(x)=P(X\le x)$. Para un intervalo, $P(a\le X\le b)=F(b)-F(a)$. La densidad $f(x)$ no es una probabilidad puntual: $P(X=x)=0$.
 
 ## Media, varianza y desviación estándar
 
 $$
-\operatorname{E}[X]=\nu
+\begin{aligned}\operatorname{E}[X]&=\nu\\[4pt]\operatorname{Var}(X)&=2\nu\\[4pt]\sigma_X&=\sqrt{\operatorname{Var}(X)}\end{aligned}
 $$
-
-$$
-\operatorname{Var}(X)=2\nu
-$$
-
-$$
-\sigma_X=\sqrt{\operatorname{Var}(X)}
-$$
-
-En modelos multivariados los momentos anteriores son **por componente**.
-Si el momento no existe, la desviación tampoco está definida.
 
 ## Propiedades y casos especiales
 
@@ -51,14 +36,14 @@ Es una gamma con forma $\nu/2$ y escala 2. Para $\nu=1$, la densidad diverge en 
 
 ![Representación de Chi-cuadrado](../imagenes/chi_cuadrado.png)
 
-*Figura 1. Curva teórica o primera marginal ilustrativa para Chi-cuadrado; no sustituye a la densidad conjunta de un modelo multivariante.*
+*Figura 1. Chi-cuadrado: representación ilustrativa de la función de densidad.*
 
 ## Ejemplo resuelto, paso a paso
 
-1. Configure `gl=5.0` y el evento $x=2$.
-2. Sustituya los parámetros en la fórmula de densidad (PDF); obtenga densidad (no probabilidad puntual) **0.138369**.
-3. Evalúe la CDF en ese mismo evento: **0.150855**. Para una cola superior, consulte la función de supervivencia; no sume densidades continuas.
-4. Interprete unidades y soporte antes de comunicar el resultado; la UI conserva todos los decimales internos.
+1. **Datos.** Usa `gl` = 5 y evalúa el punto $x=2$.
+2. **Sustitución.** $f(2)=e^{-1}/[2\Gamma(5/2)]$. La densidad es **0,138369**.
+3. **Acumulada.** $F(2)=P(X\le 2)$ ≈ **0,150855**.
+4. **Interpretación.** La probabilidad de no superar 2 es aproximadamente 15,09 %. Para una probabilidad entre dos puntos, resta sus acumuladas.
 
 ## Referencias
 

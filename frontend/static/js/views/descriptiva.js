@@ -1,3 +1,4 @@
+import { VISTAS } from "../data.js";
 import {
   el,
   panel,
@@ -193,7 +194,7 @@ export async function montar(host) {
     { class: "zona-archivo", for: "archivo-datos", tabindex: "0" },
     icono("archivo", { tamano: 22 }),
     el("strong", {}, "Arrastra un CSV o haz clic para elegirlo"),
-    el("span", {}, "El archivo se procesa en tu navegador; no se envía a ningún servidor.")
+    el("span", {}, "El archivo se lee en tu navegador. Al analizar, los valores se procesan en el motor local.")
   );
   zonaArchivo.addEventListener("keydown", (e) => {
     if (e.key === "Enter" || e.key === " ") {
@@ -228,7 +229,7 @@ export async function montar(host) {
     ),
     boton("Cargar este ejemplo", {
       variante: "secundario",
-      icono: "descargar",
+      icono: "ejemplo",
       onClick: () => {
         if (!ejemplo) return;
         campoDatos.setValor(textoSerie(ejemplo.datos));
@@ -248,7 +249,7 @@ export async function montar(host) {
       boton("Limpiar", {
         variante: "fantasma",
         pequeno: true,
-        icono: "basura",
+        icono: "limpiar",
         onClick: () => {
           campoDatos.setValor("");
           actualizarContador();
@@ -300,7 +301,7 @@ export async function montar(host) {
           el(
             "p",
             { class: "vista__subtitulo" },
-            "Obtén centro, dispersión, forma y atípicos antes de decidir. El histograma y la caja se recalculan al instante y puedes exportar el informe completo."
+            VISTAS.descriptiva.subtitulo
           )
         ),
         el(
@@ -527,23 +528,11 @@ export async function montar(host) {
     resultadoHost.replaceChildren(
       panel({
         titulo: "Sin análisis todavía",
-        icono: "chispa",
+        icono: "info",
         contenido: estadoVacio({
           icono: "descriptiva",
           titulo: "Pega una columna de números",
-          texto: "Verás media, mediana, dispersión, forma, histograma, caja y valores atípicos. Si no tienes datos a mano, carga el ejemplo.",
-          acciones: [
-            boton("Cargar ejemplo", {
-              icono: "descargar",
-              onClick: () => {
-                if (!ejemplo) return;
-                campoDatos.setValor(textoSerie(ejemplo.datos));
-                actualizarContador();
-                fijarPestana("pegar");
-                analizar();
-              },
-            }),
-          ],
+          texto: "Introduce tus datos o abre la pestaña «Ejemplo», y pulsa «Analizar datos».",
         }),
       })
     );

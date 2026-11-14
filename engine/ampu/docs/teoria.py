@@ -53,6 +53,23 @@ def _preservar_matematicas(texto: str) -> tuple[str, dict[str, str]]:
     return texto, tokens
 
 
+def convertir_markdown(texto: str, *, imagenes_web: bool = False) -> tuple[str, markdown.Markdown]:
+    """Una conversión para la biblioteca, sus fichas y las páginas independientes.
+
+    No aplana listas ni recorta ejemplos. Las fórmulas se apartan antes de
+    Markdown para conservar subíndices, barras y saltos de línea de LaTeX.
+    """
+    preparado, tokens = _preservar_matematicas(texto)
+    conversor = markdown.Markdown(extensions=["tables", "fenced_code", "toc", "sane_lists"], output_format="html5")
+    html = conversor.convert(preparado)
+    for token, fragmento in tokens.items():
+        html = html.replace(f"<p>{token}</p>", fragmento).replace(token, fragmento)
+    if imagenes_web:
+        html = html.replace('src="../imagenes/', 'src="/media/teoria/')
+    html = html.replace("<table>", '<div class="tabla-scroll"><table>').replace("</table>", "</table></div>")
+    return html, conversor
+
+
 def renderizar(clave: str, tema: str = "claro") -> str:
     """Genera página completa con índice, estilos accesibles y tema sin CDN.
 
@@ -64,11 +81,7 @@ def renderizar(clave: str, tema: str = "claro") -> str:
         raise ValueError("Tema no reconocido.")
     texto = leer_teoria(clave)
     titulo = texto.splitlines()[0].lstrip("# ")
-    texto, tokens = _preservar_matematicas(texto)
-    conversor = markdown.Markdown(extensions=["tables", "fenced_code", "toc"], output_format="html5")
-    articulo = conversor.convert(texto)
-    for token, html in tokens.items():
-        articulo = articulo.replace(f"<p>{token}</p>", html).replace(token, html)
+    articulo, conversor = convertir_markdown(texto)
     indice = conversor.toc
     pagina = PLANTILLA.read_text(encoding="utf-8")
     return (pagina.replace("{{TITULO}}", escape(titulo)).replace("{{TEMA}}", tema)

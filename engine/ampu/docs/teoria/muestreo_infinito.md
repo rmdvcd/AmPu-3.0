@@ -12,42 +12,28 @@ Dimensiona un diseño de proporciones sin corrección finita; si se muestrea con
 | `d` | Error absoluto tolerado >0 |
 | `1−α` | Confianza estrictamente entre 0 y 1 |
 
+## Fórmula y procedimiento
 
-## Función, estadístico o regla de selección
-
-$$
-n_0=\left\lceil\frac{z_{1-\alpha/2}^{2}p(1-p)}{d^2}\right\rceil
-$$
-
-## Función de distribución acumulada (CDF)
-
-CDF del indicador de inclusión o aproximación de diseño; no existe una única CDF de toda la técnica.
+Para una confianza $1-\alpha$, usa el cuantil normal $z=z_{1-\alpha/2}$. Al 95 %, $z\approx1{,}959964$.
 
 $$
-P(I_i\le t)=\begin{cases}0,&t<0\\1-p_i,&0\le t<1\\1,&t\ge1\end{cases}
+n_0=\frac{z_{1-\alpha/2}^{2}p(1-p)}{d^2},\qquad n=\lceil n_0\rceil
 $$
 
-## Media, varianza y desviación estándar
+## Selección con reemplazo
 
-$$
-\operatorname{E}[I_i]=p_i,\quad\operatorname{Var}(I_i)=p_i(1-p_i),\quad\sigma_i=\sqrt{p_i(1-p_i)}
-$$
-
-Si no se explicita $\sigma=\sqrt{\operatorname{Var}}$, se obtiene como raíz cuadrada de la varianza; cuando no existe, no debe reportarse un valor numérico.
+En AmPu, cada sorteo elige uniformemente un identificador de la lista y lo devuelve antes del siguiente. Cada extracción tiene probabilidad $1/N$; la probabilidad de que una unidad aparezca al menos una vez es $1-(1-1/N)^n$, no $n/N$.
 
 ## Propiedades y casos especiales
 
-Si $p$ es desconocida, usar $p=0,5$ es conservador. Independencia real requiere reemplazo o población suficientemente grande.
-
-![Esquema de Aleatorio simple · población grande](../imagenes/muestreo.png)
-
-*Figura 1. Representación orientativa del procedimiento o de su distribución de referencia.*
+Si $p$ es desconocida, usa $p=0{,}5$ como opción conservadora. Sin reemplazo, la independencia es una aproximación cuando la fracción de muestreo es pequeña.
 
 ## Ejemplo resuelto, paso a paso
 
-1. Fije confianza 95 %, $p=0,5$ y error $d=0,05$.
-2. Calcule $n_0=1,960^2(0,25)/0,0025=384,16$.
-3. Redondee hacia arriba: 385 observaciones. Con reemplazo, una misma unidad puede repetirse.
+1. **Datos.** Usa $p=0{,}5$, margen $d=0{,}05$ y confianza del 95 %, sin corrección de población finita.
+2. **Cálculo.** $n_0=z^2(0{,}25)/0{,}05^2\approx384{,}1459$.
+3. **Redondeo.** Necesitas **385** observaciones. En AmPu, este diseño sortea con reemplazo: un identificador puede repetirse.
+4. **Interpretación.** El margen se refiere a estimar una proporción bajo el modelo supuesto; no equivale a una garantía para cualquier variable o diseño complejo.
 
 ## Referencias
 

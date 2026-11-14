@@ -2,15 +2,13 @@
 
 ## Definición formal
 
-Distribución normal de media 0 y varianza 1, conocida como campana de Gauss. En AmPu 3.1 se parametriza exactamente como en `scipy.stats`;
-los eventos fuera del soporte reciben masa/densidad 0.
+Distribución normal de media 0 y varianza 1, conocida como campana de Gauss.
 
 ## Parámetros y rango
 
-| Parámetro | Significado | Rango | Valor de ejemplo |
+| Parámetro | Significado | Valores admitidos | Ejemplo |
 |---|---|---|---|
 | — | Modelo sin parámetros libres | — | — |
-
 
 ## Función de densidad (PDF)
 
@@ -24,26 +22,13 @@ $$
 \Phi(z)=\int_{-\infty}^{z}\varphi(t)\,\mathrm{d}t
 $$
 
-En general, la CDF es $F(x)=P(X\le x)$. Para una variable continua,
-$P(a\le X\le b)=F(b)-F(a)$; para una discreta los extremos se incluyen
-según los saltos de su CDF. Para una cola superior, consulte la función de supervivencia; no sume densidades continuas.
+La acumulada es $F(x)=P(X\le x)$. Para un intervalo, $P(a\le X\le b)=F(b)-F(a)$. La densidad $f(x)$ no es una probabilidad puntual: $P(X=x)=0$.
 
 ## Media, varianza y desviación estándar
 
 $$
-\operatorname{E}[Z]=0
+\begin{aligned}\operatorname{E}[Z]&=0\\[4pt]\operatorname{Var}(Z)&=1\\[4pt]\sigma_Z&=1\end{aligned}
 $$
-
-$$
-\operatorname{Var}(Z)=1
-$$
-
-$$
-\sigma_X=\sqrt{\operatorname{Var}(X)}
-$$
-
-En modelos multivariados los momentos anteriores son **por componente**.
-Si el momento no existe, la desviación tampoco está definida.
 
 ## Propiedades y casos especiales
 
@@ -51,14 +36,14 @@ Es simétrica: $\Phi(-z)=1-\Phi(z)$. Si $X\sim N(\mu,\sigma^2)$, entonces $(X-\m
 
 ![Representación de Normal estándar](../imagenes/normal_estandar.png)
 
-*Figura 1. Curva teórica o primera marginal ilustrativa para Normal estándar; no sustituye a la densidad conjunta de un modelo multivariante.*
+*Figura 1. Normal estándar: representación ilustrativa de la función de densidad.*
 
 ## Ejemplo resuelto, paso a paso
 
-1. Configure la distribución estándar y el evento $x=2$.
-2. Sustituya los parámetros en la fórmula de densidad (PDF); obtenga densidad (no probabilidad puntual) **0.053991**.
-3. Evalúe la CDF en ese mismo evento: **0.97725**. Para una cola superior, consulte la función de supervivencia; no sume densidades continuas.
-4. Interprete unidades y soporte antes de comunicar el resultado; la UI conserva todos los decimales internos.
+1. **Datos.** Usa la normal estándar, sin parámetros libres y evalúa el punto $x=2$.
+2. **Sustitución.** $f(2)=e^{-2}/\sqrt{2\pi}$. La densidad es **0,053991**.
+3. **Acumulada.** $F(2)=P(X\le 2)$ ≈ **0,97725**.
+4. **Interpretación.** La probabilidad de no superar 2 es aproximadamente 97,72 %. Para una probabilidad entre dos puntos, resta sus acumuladas.
 
 ## Referencias
 

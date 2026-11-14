@@ -12,45 +12,28 @@ Contrasta $H_0:\mu=\mu_0$ si se conoce la desviación poblacional $\sigma$.
 | `σ` | Desviación poblacional >0 |
 | `α` | Nivel de significación en (0,1) |
 
-
-## Función, estadístico o regla de selección
+## Fórmula y procedimiento
 
 $$
 Z=\frac{\bar X-\mu_0}{\sigma/\sqrt n}\overset{H_0}{\sim}N(0,1)
 $$
 
-## Función de distribución acumulada (CDF)
+## Distribución de referencia
 
-CDF de referencia o del estimador bajo las hipótesis indicadas.
-
-$$
-F_Z(z)=\Phi(z)=\int_{-\infty}^{z}\frac{e^{-u^2/2}}{\sqrt{2\pi}}\,\mathrm{d}u
-$$
-
-## Media, varianza y desviación estándar
-
-$$
-\operatorname{E}_{H_0}[Z]=0,\quad\operatorname{Var}_{H_0}(Z)=1,\quad\sigma_Z=1
-$$
-
-Si no se explicita $\sigma=\sqrt{\operatorname{Var}}$, se obtiene como raíz cuadrada de la varianza; cuando no existe, no debe reportarse un valor numérico.
+Con desviación poblacional conocida y población normal, el estadístico es normal estándar bajo $H_0$. Para muestras grandes puede usarse una aproximación por el teorema central del límite. La prueba bilateral usa $2[1-\Phi(|z|)]$.
 
 ## Propiedades y casos especiales
 
 Ofrece alternativas bilateral y unilaterales; p menor que α permite rechazar H₀, no prueba causalidad.
 
-![Esquema de Prueba z · una media](../imagenes/inferencia.png)
-
-*Figura 1. Representación orientativa del procedimiento o de su distribución de referencia.*
-
 ## Ejemplo resuelto, paso a paso
 
-1. Sea $n=25$, $\bar x=52$, $\mu_0=50$ y $\sigma=5$.
-2. $z=(52-50)/(5/5)=2$.
-3. p bilateral $=2[1-\Phi(2)]\approx0,0455$; a 5 %, rechace H₀.
+1. **Datos.** Usa `49 51 53 55`, una desviación poblacional conocida $\sigma=2$ y $H_0:\mu=50$. Supón población normal.
+2. **Estadístico.** La media es 52 y el error estándar es $2/\sqrt4=1$. Por tanto, $z=(52-50)/1=$ **2**.
+3. **Resultado.** El p-valor bilateral es $2[1-\Phi(2)]\approx$ **0,0455**.
+4. **Conclusión.** A $\alpha=0{,}05$, rechaza $H_0$. La desviación conocida debe proceder de información externa; no sustituyas la desviación muestral para justificar una prueba z.
 
 ## Referencias
 
-- Cochran, W. G. (1977). *Sampling Techniques* (3.ª ed.). Wiley.
 - Casella, G., & Berger, R. L. (2002). *Statistical Inference* (2.ª ed.). Duxbury.
 - Virtanen, P., et al. (2020). SciPy 1.0: Fundamental algorithms for scientific computing in Python. *Nature Methods, 17*, 261–272. https://doi.org/10.1038/s41592-019-0686-2

@@ -12,15 +12,15 @@ const TRAZOS = {
   probabilidad:
     '<rect x="4" y="4" width="16" height="16" rx="3.2"/><circle cx="8.8" cy="8.8" r="1" fill="currentColor" stroke="none"/><circle cx="15.2" cy="8.8" r="1" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1" fill="currentColor" stroke="none"/><circle cx="8.8" cy="15.2" r="1" fill="currentColor" stroke="none"/><circle cx="15.2" cy="15.2" r="1" fill="currentColor" stroke="none"/>',
   inferencia:
-    '<path d="M9.2 3h5.6"/><path d="M10 3v6.4L5.1 18a2.1 2.1 0 0 0 1.8 3.2h10.2a2.1 2.1 0 0 0 1.8-3.2L14 9.4V3"/><path d="M7.5 15.4h9"/>',
+    '<path d="M4 5v6M20 5v6M4 8h16M7 15v6M17 15v6M7 18h10"/><circle cx="12" cy="8" r="2" fill="currentColor"/><circle cx="12" cy="18" r="2" fill="currentColor"/>',
   regresion:
-    '<path d="M4 4v16h16"/><path d="M6.5 16.5l3.8-4.7 3 2 4.7-6.6"/><circle cx="10.3" cy="11.8" r="1.4"/><circle cx="14.1" cy="13.8" r="1.4"/>',
+    '<path d="M4 4v16h16M7 16 19 6"/><circle cx="8" cy="11" r="1.2"/><circle cx="14" cy="15" r="1.2"/><circle cx="18" cy="11" r="1.2"/>',
   muestreo:
-    '<circle cx="6.5" cy="6.5" r="2"/><circle cx="17.5" cy="6.5" r="2"/><circle cx="6.5" cy="17.5" r="2"/><circle cx="17.5" cy="17.5" r="2"/><path d="M9 9l6 6M15 9l-6 6"/>',
+    '<rect x="4" y="4" width="5.5" height="5.5" rx="1"/><rect x="14.5" y="4" width="5.5" height="5.5" rx="1"/><rect x="4" y="14.5" width="5.5" height="5.5" rx="1"/><path d="m14 17 2.5 2.5L21 14"/>',
   simulacion:
-    '<path d="M12 3v3.6M12 17.4V21M3 12h3.6M17.4 12H21"/><path d="M5.8 5.8l2.5 2.5M15.7 15.7l2.5 2.5M18.2 5.8l-2.5 2.5M8.3 15.7l-2.5 2.5"/><circle cx="12" cy="12" r="2.1"/>',
+    '<path d="M3 6h3c4 0 8 12 12 12h3M17 14l4 4-4 4M3 18h3c1.7 0 3.5-2.4 5-5M14 8c1.5-1.5 2.7-2 4-2h3M17 2l4 4-4 4"/>',
   teoria:
-    '<path d="M4 19.3A2.3 2.3 0 0 1 6.3 17H20"/><path d="M6.3 2H20v20H6.3A2.3 2.3 0 0 1 4 19.7V4.3A2.3 2.3 0 0 1 6.3 2z"/><path d="M8.5 6.5h7"/>',
+    '<path d="M12 6c-3-2-6-2-10-2v15c4 0 7 0 10 2 3-2 6-2 10-2V4c-4 0-7 0-10 2v15"/>',
   buscar:
     '<circle cx="10.8" cy="10.8" r="6.6"/><path d="m15.7 15.7 4.1 4.1"/>',
   menu: '<path d="M4 7h16M4 12h16M4 17h16"/>',
@@ -86,7 +86,15 @@ const TRAZOS = {
     '<circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="4.5"/><circle cx="12" cy="12" r="1" fill="currentColor" stroke="none"/>',
   reloj: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5.4l3.4 2"/>',
   sigma: '<path d="M18 4H6l6 8-6 8h12"/>',
-  pi: '<path d="M4 7h16M8.5 7v13M16 7v13M13 7v6"/>',
+  pi: '<path d="M3 7h18M8 7v13M16 7v10c0 2 1 3 3 3"/>',
+  integral: '<path d="M17 3c-4-2-5 1-5 5v8c0 4-1 7-5 5"/>',
+  condicional: '<circle cx="9" cy="12" r="7"/><circle cx="15" cy="12" r="7"/>',
+  ejemplo: '<path d="M6 3h8l4 4v14H6zM14 3v5h4M9 12h6M9 16h4"/>',
+  limpiar: '<path d="m14 3 7 7-10 10H6l-4-4L14 3zM8 10l7 7M11 20h10"/>',
+  importar: '<path d="M12 16V3M7 8l5-5 5 5M4 15v5h16v-5"/>',
+  restablecer: '<path d="M3 4v6h6M3.5 10A8.5 8.5 0 1 1 5 18"/>',
+  imagen: '<rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8" cy="8" r="1.5"/><path d="m21 15-6-6L3 21"/>',
+  lista: '<path d="M9 6h12M9 12h12M9 18h12M3 6h.01M3 12h.01M3 18h.01"/>',
   porcentaje:
     '<path d="M19 5 5 19"/><circle cx="7.2" cy="7.2" r="2.4"/><circle cx="16.8" cy="16.8" r="2.4"/>',
   documento:
@@ -101,6 +109,19 @@ const TRAZOS = {
 };
 
 export const NOMBRES_ICONOS = Object.keys(TRAZOS);
+export const ICONO_APP = "/static/img/icono_ampu.svg?v=4";
+
+/** Marca de la aplicación, no un sustituto de los iconos de acción/estado. */
+export function iconoApp(tamano = 32) {
+  const imagen = document.createElement("img");
+  imagen.src = ICONO_APP;
+  imagen.width = tamano;
+  imagen.height = tamano;
+  imagen.alt = "";
+  imagen.className = "icono-app";
+  imagen.setAttribute("aria-hidden", "true");
+  return imagen;
+}
 
 export function svgIcono(nombre, tamano = 18) {
   const trazo = TRAZOS[nombre] || TRAZOS.punto;
@@ -110,8 +131,9 @@ export function svgIcono(nombre, tamano = 18) {
 export function icono(nombre, { tamano = 18, clase = "" } = {}) {
   const span = document.createElement("span");
   span.className = `icono-svg ${clase}`.trim();
-  span.style.display = "inline-grid";
-  span.style.placeItems = "center";
+  span.dataset.icono = nombre;
+  span.dataset.hidratado = "true";
+  span.setAttribute("aria-hidden", "true");
   span.innerHTML = svgIcono(nombre, tamano);
   return span;
 }

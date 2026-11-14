@@ -2,17 +2,17 @@
 
 ## Definición formal
 
-Cuenta éxitos en $n$ extracciones **sin reemplazo** de una población de $N$ con $K$ éxitos. En AmPu 3.1 se parametriza exactamente como en `scipy.stats`;
-los eventos fuera del soporte reciben masa/densidad 0.
+Cuenta éxitos en $n$ extracciones **sin reemplazo** de una población de $N$ con $K$ éxitos.
 
 ## Parámetros y rango
 
-| Parámetro | Significado | Rango | Valor de ejemplo |
+| Parámetro | Significado | Valores admitidos | Ejemplo |
 |---|---|---|---|
-| `N` | Tamaño de la población | ≥ 1; sin límite | `30` |
-| `K` | Éxitos en la población | ≥ 0; sin límite | `12` |
-| `n` | Tamaño de la muestra | ≥ 0; sin límite | `8` |
+| `N` | Tamaño de la población | Entero, ≥ 1 | 30 |
+| `K` | Éxitos en la población | Entero, ≥ 0 | 12 |
+| `n` | Tamaño de la muestra | Entero, ≥ 0 | 8 |
 
+Además, $K\le N$ y $n\le N$; todos los tamaños son enteros.
 
 ## Función de masa (PMF)
 
@@ -26,26 +26,15 @@ $$
 F(x)=\sum_{j=\max(0,n-N+K)}^{\lfloor x\rfloor}\frac{\binom Kj\binom{N-K}{n-j}}{\binom Nn}
 $$
 
-En general, la CDF es $F(x)=P(X\le x)$. Para una variable continua,
-$P(a\le X\le b)=F(b)-F(a)$; para una discreta los extremos se incluyen
-según los saltos de su CDF. Para una cola superior, consulte la función de supervivencia; no sume densidades continuas.
+Si $N=1$, la población no tiene variación y la varianza es 0.
+
+La acumulada $F(x)=P(X\le x)$ suma las masas hasta $x$. Para enteros $a\le b$, $P(a\le X\le b)=F(b)-F(a-1)$.
 
 ## Media, varianza y desviación estándar
 
 $$
-\operatorname{E}[X]=n\frac KN
+\begin{aligned}\operatorname{E}[X]&=n\frac KN\\[4pt]\operatorname{Var}(X)&=n\frac KN\left(1-\frac KN\right)\frac{N-n}{N-1}\\[4pt]\sigma_X&=\sqrt{\operatorname{Var}(X)}\end{aligned}
 $$
-
-$$
-\operatorname{Var}(X)=n\frac KN\left(1-\frac KN\right)\frac{N-n}{N-1}
-$$
-
-$$
-\sigma_X=\sqrt{\operatorname{Var}(X)}
-$$
-
-En modelos multivariados los momentos anteriores son **por componente**.
-Si el momento no existe, la desviación tampoco está definida.
 
 ## Propiedades y casos especiales
 
@@ -53,14 +42,14 @@ Soporte: $\max(0,n-N+K)\le x\le\min(n,K)$. La corrección $\frac{N-n}{N-1}$ cuan
 
 ![Representación de Hipergeométrica](../imagenes/hipergeometrica.png)
 
-*Figura 1. Curva teórica o primera marginal ilustrativa para Hipergeométrica; no sustituye a la densidad conjunta de un modelo multivariante.*
+*Figura 1. Hipergeométrica: representación ilustrativa de la función de masa.*
 
 ## Ejemplo resuelto, paso a paso
 
-1. Configure `N=30`, `K=12`, `n=8` y el evento $x=3$.
-2. Sustituya los parámetros en la fórmula de masa (PMF); obtenga probabilidad **0.322054**.
-3. Evalúe la CDF en ese mismo evento: **0.604113**. Para una cola superior, consulte la función de supervivencia; no sume densidades continuas.
-4. Interprete unidades y soporte antes de comunicar el resultado; la UI conserva todos los decimales internos.
+1. **Datos.** Usa `N` = 30, `K` = 12, `n` = 8 y evalúa el punto $x=3$.
+2. **Sustitución.** $P(X=3)=\frac{\binom{12}{3}\binom{18}{5}}{\binom{30}{8}}$. La masa es **0,322054**.
+3. **Acumulada.** $F(3)=P(X\le 3)$ ≈ **0,604113**.
+4. **Interpretación.** La masa del paso 2 es la probabilidad de observar exactamente 3. La acumulada incluye también todos los valores menores.
 
 ## Referencias
 

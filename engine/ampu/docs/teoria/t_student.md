@@ -2,15 +2,13 @@
 
 ## Definición formal
 
-Cociente de una normal estándar y la raíz de una chi-cuadrado independiente dividida por $\nu$. En AmPu 3.1 se parametriza exactamente como en `scipy.stats`;
-los eventos fuera del soporte reciben masa/densidad 0.
+Cociente de una normal estándar y la raíz de una chi-cuadrado independiente dividida por $\nu$.
 
 ## Parámetros y rango
 
-| Parámetro | Significado | Rango | Valor de ejemplo |
+| Parámetro | Significado | Valores admitidos | Ejemplo |
 |---|---|---|---|
-| `gl` | Grados de libertad | > 0; sin límite | `5.0` |
-
+| `gl` | Grados de libertad | > 0 | 5 |
 
 ## Función de densidad (PDF)
 
@@ -24,26 +22,15 @@ $$
 F(x)=\int_{-\infty}^{x}f(t)\,\mathrm{d}t
 $$
 
-En general, la CDF es $F(x)=P(X\le x)$. Para una variable continua,
-$P(a\le X\le b)=F(b)-F(a)$; para una discreta los extremos se incluyen
-según los saltos de su CDF. Para una cola superior, consulte la función de supervivencia; no sume densidades continuas.
+La acumulada es $F(x)=P(X\le x)$. Para un intervalo, $P(a\le X\le b)=F(b)-F(a)$. La densidad $f(x)$ no es una probabilidad puntual: $P(X=x)=0$.
 
 ## Media, varianza y desviación estándar
 
 $$
-\operatorname{E}[X]=0\ (\nu>1)
+\begin{aligned}\operatorname{E}[X]&=0\ (\nu>1)\\[4pt]\operatorname{Var}(X)&=\frac\nu{\nu-2}\ (\nu>2)\\[4pt]\sigma_X&=\sqrt{\operatorname{Var}(X)}\end{aligned}
 $$
 
-$$
-\operatorname{Var}(X)=\frac\nu{\nu-2}\ (\nu>2)
-$$
-
-$$
-\sigma_X=\sqrt{\operatorname{Var}(X)}
-$$
-
-En modelos multivariados los momentos anteriores son **por componente**.
-Si el momento no existe, la desviación tampoco está definida.
+Los momentos solo existen bajo las condiciones indicadas; si la varianza no existe, la desviación estándar tampoco está definida.
 
 ## Propiedades y casos especiales
 
@@ -51,14 +38,14 @@ Para $\nu=1$ es Cauchy, sin media ni varianza; para $1<\nu\le2$ no hay varianza.
 
 ![Representación de t de Student](../imagenes/t_student.png)
 
-*Figura 1. Curva teórica o primera marginal ilustrativa para t de Student; no sustituye a la densidad conjunta de un modelo multivariante.*
+*Figura 1. t de Student: representación ilustrativa de la función de densidad.*
 
 ## Ejemplo resuelto, paso a paso
 
-1. Configure `gl=5.0` y el evento $x=1$.
-2. Sustituya los parámetros en la fórmula de densidad (PDF); obtenga densidad (no probabilidad puntual) **0.21968**.
-3. Evalúe la CDF en ese mismo evento: **0.818391**. Para una cola superior, consulte la función de supervivencia; no sume densidades continuas.
-4. Interprete unidades y soporte antes de comunicar el resultado; la UI conserva todos los decimales internos.
+1. **Datos.** Usa `gl` = 5 y evalúa el punto $x=1$.
+2. **Sustitución.** $f(1)=\frac{\Gamma(3)}{\sqrt{5\pi}\,\Gamma(5/2)}(6/5)^{-3}$. La densidad es **0,21968**.
+3. **Acumulada.** $F(1)=P(X\le 1)$ ≈ **0,818391**.
+4. **Interpretación.** La probabilidad de no superar 1 es aproximadamente 81,84 %. Para una probabilidad entre dos puntos, resta sus acumuladas.
 
 ## Referencias
 

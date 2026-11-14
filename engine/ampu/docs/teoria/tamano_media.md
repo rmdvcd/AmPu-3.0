@@ -12,42 +12,28 @@ Con desviación poblacional estimada $\sigma$, determina observaciones necesaria
 | `d` | Margen absoluto >0 |
 | `N` | Población finita, opcional |
 
+## Fórmula y procedimiento
 
-## Función, estadístico o regla de selección
-
-$$
-n_0=\left\lceil\left(\frac{z_{1-\alpha/2}\sigma}{d}\right)^2\right\rceil,\quad n_F=\left\lceil\frac{Nn_0}{N-1+n_0}\right\rceil
-$$
-
-## Función de distribución acumulada (CDF)
-
-CDF de referencia o del estimador bajo las hipótesis indicadas.
+Para una confianza $1-\alpha$, usa el cuantil normal $z=z_{1-\alpha/2}$. Al 95 %, $z\approx1{,}959964$.
 
 $$
-P(\bar X\le t)\approx\Phi\left(\frac{t-\mu}{\sigma/\sqrt{n}}\right)
+\begin{aligned}n_0&=\left(\frac{z_{1-\alpha/2}\sigma}{d}\right)^2\\n_\infty&=\lceil n_0\rceil,\qquad n_F=\left\lceil\frac{Nn_0}{N-1+n_0}\right\rceil\end{aligned}
 $$
 
-## Media, varianza y desviación estándar
+## Margen y corrección finita
 
-$$
-\operatorname{E}[\bar X]=\mu,\quad\operatorname{Var}(\bar X)=\sigma^2/n,\quad\sigma_{\bar X}=\sigma/\sqrt n
-$$
-
-Si no se explicita $\sigma=\sqrt{\operatorname{Var}}$, se obtiene como raíz cuadrada de la varianza; cuando no existe, no debe reportarse un valor numérico.
+El margen está en unidades de la variable y requiere una estimación previa razonable de $\sigma$. Para población finita y muestreo aleatorio simple sin reemplazo, corrige $n_0$ sin redondear y toma el techo al final. No es un cálculo de potencia.
 
 ## Propiedades y casos especiales
 
 Es una aproximación normal; para poblaciones finitas se aplica factor de corrección y tamaño ≤N.
 
-![Esquema de Tamaño muestral para estimar medias](../imagenes/muestreo.png)
-
-*Figura 1. Representación orientativa del procedimiento o de su distribución de referencia.*
-
 ## Ejemplo resuelto, paso a paso
 
-1. Suponga $\sigma=12$, $d=2$ y confianza 95 %.
-2. Calcule $n_0=\lceil(1,960·12/2)^2\rceil=139$.
-3. Si $N=500$, aplique corrección finita antes de extraer unidades.
+1. **Datos.** Usa desviación esperada $\sigma=12$, margen absoluto $d=2$ y confianza del 95 %.
+2. **Población grande.** $n_0=(z\cdot12/2)^2\approx138{,}2925$. Al redondear hacia arriba necesitas **139** observaciones.
+3. **Población finita.** Si $N=500$, aplica la corrección a $n_0$ sin redondear y después toma el techo: **109** observaciones.
+4. **Interpretación.** El margen está en las unidades originales de la variable. La precisión depende de que la desviación esperada y el diseño supuesto sean razonables.
 
 ## Referencias
 

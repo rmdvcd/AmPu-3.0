@@ -12,45 +12,28 @@ Contrasta $H_0:p=p_0$ usando error estándar bajo la hipótesis nula.
 | `n` | Ensayos positivos |
 | `p₀` | Proporción nula en (0,1) |
 
-
-## Función, estadístico o regla de selección
+## Fórmula y procedimiento
 
 $$
 Z=\frac{\hat p-p_0}{\sqrt{p_0(1-p_0)/n}},\quad\hat p=x/n
 $$
 
-## Función de distribución acumulada (CDF)
+## Aproximación y prueba exacta
 
-CDF de referencia o del estimador bajo las hipótesis indicadas.
-
-$$
-F_Z(z)\approx\Phi(z)\quad\text{si }np_0,n(1-p_0)\text{ son suficientes}
-$$
-
-## Media, varianza y desviación estándar
-
-$$
-\operatorname{E}_{H_0}[Z]\approx0,\quad\operatorname{Var}_{H_0}(Z)\approx1
-$$
-
-Si no se explicita $\sigma=\sqrt{\operatorname{Var}}$, se obtiene como raíz cuadrada de la varianza; cuando no existe, no debe reportarse un valor numérico.
+El estadístico z es aproximadamente normal estándar si $np_0\ge5$ y $n(1-p_0)\ge5$. AmPu utiliza una prueba binomial exacta cuando esas condiciones no se cumplen. La proporción nula debe estar estrictamente entre 0 y 1.
 
 ## Propiedades y casos especiales
 
-Para pocos ensayos conviene una prueba binomial exacta; el intervalo descriptivo es de Wilson, incluso con 0 éxitos.
-
-![Esquema de Prueba z · una proporción](../imagenes/inferencia.png)
-
-*Figura 1. Representación orientativa del procedimiento o de su distribución de referencia.*
+AmPu muestra un intervalo de Wilson cuando usa la aproximación z y un intervalo exacto de Clopper–Pearson cuando usa la prueba binomial exacta. El intervalo y el p-valor responden a preguntas diferentes.
 
 ## Ejemplo resuelto, paso a paso
 
-1. Observe 50 éxitos de 100 con $p_0=0,3$.
-2. $z=(0,5-0,3)/\sqrt{0,3(0,7)/100}\approx4,364$.
-3. La p bilateral es muy pequeña; rechace H₀ al 5 %.
+1. **Datos.** Observa 50 éxitos en 100 ensayos y contrasta $H_0:p=0{,}3$, con alternativa bilateral.
+2. **Estadístico.** $\hat p=0{,}5$ y el error estándar nulo es $\sqrt{0{,}3\cdot0{,}7/100}$. Se obtiene $z\approx$ **4,364358**.
+3. **Resultado.** El p-valor bilateral es aproximadamente **0,000013**. Las frecuencias nulas, 30 y 70, permiten la aproximación normal.
+4. **Conclusión.** Rechaza $H_0$ al 5 %. El p-valor no es la probabilidad de que la proporción nula sea verdadera.
 
 ## Referencias
 
-- Cochran, W. G. (1977). *Sampling Techniques* (3.ª ed.). Wiley.
 - Casella, G., & Berger, R. L. (2002). *Statistical Inference* (2.ª ed.). Duxbury.
 - Virtanen, P., et al. (2020). SciPy 1.0: Fundamental algorithms for scientific computing in Python. *Nature Methods, 17*, 261–272. https://doi.org/10.1038/s41592-019-0686-2

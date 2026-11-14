@@ -12,45 +12,30 @@ Estima la respuesta a partir de predictores usando mínimos cuadrados ordinarios
 | `X` | Matriz de predictores de rango completo |
 | `β` | Intercepto y coeficientes estimados |
 
-
-## Función, estadístico o regla de selección
+## Fórmula y procedimiento
 
 $$
 \hat{\boldsymbol\beta}=(X^\top X)^{-1}X^\top\boldsymbol y,\quad\hat y_i=\hat\beta_0+\sum_j\hat\beta_j x_{ij}
 $$
 
-## Función de distribución acumulada (CDF)
+En esta notación, $X$ incluye una columna de unos para el intercepto. La fórmula matricial supone rango completo; el algoritmo numérico no necesita formar la inversa.
 
-CDF de referencia o del estimador bajo las hipótesis indicadas.
+## Predicción e incertidumbre
 
-$$
-F_{T_j}(t)=F_{t_{n-k-1}}(t),\quad T_j=\frac{\hat\beta_j}{\operatorname{SE}(\hat\beta_j)}
-$$
-
-## Media, varianza y desviación estándar
-
-$$
-\operatorname{E}[\hat\beta_j]=\beta_j,\quad\operatorname{Var}(\hat{\boldsymbol\beta})=\sigma^2(X^\top X)^{-1}
-$$
-
-Si no se explicita $\sigma=\sqrt{\operatorname{Var}}$, se obtiene como raíz cuadrada de la varianza; cuando no existe, no debe reportarse un valor numérico.
+La respuesta media estimada es $\hat y=\boldsymbol{x}^{\top}\hat{\boldsymbol\beta}$. Los intervalos clásicos suponen errores independientes, homocedásticos y aproximadamente normales. Un intervalo para una observación nueva es más ancho que el intervalo de su media porque incluye variación individual.
 
 ## Propiedades y casos especiales
 
-La implementación resuelve por SVD (estable numéricamente), no invierte X para ajustar. $R^2$ y p-valores no prueban causalidad.
-
-![Esquema de Regresión lineal simple y múltiple](../imagenes/regresion.png)
-
-*Figura 1. Representación orientativa del procedimiento o de su distribución de referencia.*
+AmPu resuelve el ajuste por SVD, sin invertir explícitamente la matriz. $R^2$ no prueba causalidad. Añadir predictores no reduce $R^2$ en un ajuste OLS con intercepto sobre los mismos datos, pero sí puede reducir el $R^2$ ajustado.
 
 ## Ejemplo resuelto, paso a paso
 
-1. Para puntos $(1,3),(2,5),(3,7)$, estime pendiente 2 e intercepto 1.
-2. Prediga $\hat y(4)=1+2(4)=9$.
-3. Compare residuos, $R^2$ e IC t si hay grados de libertad residuales.
+1. **Datos.** Usa X: `1 2 3 4` e Y: `3 4 7 8`. Las medias son 2,5 y 5,5.
+2. **Ajuste.** La pendiente es $9/5=$ **1,8** y el intercepto es $5{,}5-1{,}8\cdot2{,}5=$ **1**. La recta es $\hat y=1+1{,}8x$.
+3. **Predicción.** Para $x=2{,}5$, la respuesta media estimada es **5,5**.
+4. **Diagnóstico.** Los residuos son 0,2; −0,6; 0,6; −0,2 y $R^2\approx$ **0,952941**. Revisa los supuestos antes de interpretar intervalos o extrapolar.
 
 ## Referencias
 
-- Cochran, W. G. (1977). *Sampling Techniques* (3.ª ed.). Wiley.
 - Casella, G., & Berger, R. L. (2002). *Statistical Inference* (2.ª ed.). Duxbury.
 - Virtanen, P., et al. (2020). SciPy 1.0: Fundamental algorithms for scientific computing in Python. *Nature Methods, 17*, 261–272. https://doi.org/10.1038/s41592-019-0686-2

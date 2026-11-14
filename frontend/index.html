@@ -7,8 +7,9 @@
   <meta name="color-scheme" content="light dark">
   <meta name="theme-color" content="#0d3b3a">
   <title>AmPu · Laboratorio de probabilidad y estadística</title>
-  <link rel="icon" href="/favicon.ico" sizes="16x16 24x24 32x32 48x48 64x64 128x128 256x256">
-  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="icon" href="/favicon.ico?v=4" sizes="16x16 20x20 24x24 32x32 40x40 48x48 64x64 128x128 256x256">
+  <link rel="icon" href="/favicon.svg?v=4" type="image/svg+xml">
+  <meta name="application-name" content="AmPu">
   <link rel="stylesheet" href="/vendor/katex/katex.min.css">
   <link rel="stylesheet" href="/static/css/app.css">
   <script src="/static/js/prepintado.js"></script>
@@ -21,20 +22,19 @@
   <div class="barra-carga" id="barra-carga" aria-hidden="true"><span></span></div>
 
   <div class="aplicacion" id="aplicacion">
-    <div class="velo-sidebar" id="velo-sidebar" hidden></div>
+    <div class="velo-sidebar" id="velo-sidebar" aria-hidden="true" hidden></div>
 
-    <aside class="sidebar" id="sidebar" aria-label="Navegación principal">
+    <aside class="sidebar" id="sidebar" tabindex="-1" aria-label="Navegación principal">
       <div class="sidebar__marca">
         <a class="marca" href="#/inicio" aria-label="AmPu, ir al inicio">
           <span class="marca__simbolo" aria-hidden="true">
-            <img src="/static/img/icono_ampu.png" alt="" width="1024" height="745">
+            <img src="/static/img/icono_ampu.svg?v=4" alt="" width="32" height="32">
           </span>
           <span class="marca__texto">
             <strong>AmPu</strong>
-            <small>Probabilidad &amp; estadística</small>
           </span>
         </a>
-        <button class="icono-boton sidebar__cerrar" id="cerrar-sidebar" aria-label="Cerrar menú">
+        <button class="icono-boton sidebar__cerrar" id="cerrar-sidebar" type="button" aria-label="Cerrar menú" aria-controls="sidebar" title="Cerrar menú">
           <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg>
         </button>
       </div>
@@ -45,6 +45,9 @@
     <div class="principal">
       <header class="barra-superior">
         <div class="barra-superior__izq">
+          <button class="icono-boton" id="alternar-sidebar" type="button" aria-label="Abrir menú" aria-expanded="true" aria-controls="sidebar" title="Abrir menú" hidden>
+            <svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
+          </button>
           <nav class="migas" id="migas" aria-label="Ubicación">
             <a href="#/inicio">AmPu</a>
             <span aria-hidden="true">/</span>
@@ -52,9 +55,9 @@
           </nav>
         </div>
         <div class="barra-superior__centro">
-          <button class="buscador-disparo" id="abrir-buscador" aria-label="Buscar herramientas, modelos y lecciones">
+          <button class="buscador-disparo" id="abrir-buscador" aria-label="Buscar herramientas, modelos y lecciones" aria-haspopup="dialog" aria-keyshortcuts="Control+K">
             <span data-icono="buscar" aria-hidden="true"></span>
-            <span class="buscador-disparo__texto">Buscar herramientas, modelos y lecciones…</span>
+            <span class="buscador-disparo__texto">Buscar en AmPu…</span>
             <kbd class="kbd" data-atajo="buscar">Ctrl K</kbd>
           </button>
         </div>
@@ -62,11 +65,8 @@
           <button class="icono-boton" id="alternar-tema" aria-label="Cambiar tema" title="Cambiar tema">
             <span class="icono-tema" id="icono-tema" aria-hidden="true"></span>
           </button>
-          <button class="icono-boton" id="boton-ayuda" aria-label="Abrir ayuda" title="Atajos y ayuda">
+          <button class="icono-boton" id="boton-ayuda" aria-label="Abrir ayuda y atajos" aria-haspopup="dialog" aria-keyshortcuts="F1" title="Ayuda y atajos (F1)">
             <span data-icono="ayuda" aria-hidden="true"></span>
-          </button>
-          <button class="icono-boton" id="alternar-sidebar" aria-label="Mostrar u ocultar el menú" aria-expanded="true" aria-controls="sidebar" title="Menú de navegación">
-            <svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
           </button>
         </div>
       </header>
@@ -81,16 +81,6 @@
           </div>
         </div>
       </main>
-
-      <footer class="pie">
-        <span>AmPu 3.2 · motor NumPy/SciPy local</span>
-        <span class="pie__separador" aria-hidden="true">·</span>
-        <span>Los cálculos no salen de tu equipo</span>
-        <span class="pie__der">
-          <button class="enlace-boton" id="pie-ayuda" type="button">Cómo funciona</button>
-          <button class="enlace-boton" id="pie-preferencias" type="button">Preferencias</button>
-        </span>
-      </footer>
     </div>
   </div>
 

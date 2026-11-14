@@ -1,3 +1,4 @@
+import { VISTAS } from "../data.js";
 import {
   el,
   panel,
@@ -32,7 +33,7 @@ import { cargarMeta, navegar, registrarHistorial } from "../store.js";
 
 const HERRAMIENTAS = [
   { clave: "combinatoria", nombre: "Combinatoria", descripcion: "Factoriales, permutaciones y combinaciones exactas.", icono: "calculadora" },
-  { clave: "condicional", nombre: "Condicional", descripcion: "P(A|B), independencia y probabilidad conjunta.", icono: "sigma" },
+  { clave: "condicional", nombre: "Condicional", descripcion: "P(A|B), independencia y probabilidad conjunta.", icono: "condicional" },
   { clave: "bayes", nombre: "Teorema de Bayes", descripcion: "Actualiza hipótesis con evidencia nueva.", icono: "objetivo" },
   { clave: "variable", nombre: "Variable discreta", descripcion: "Esperanza, varianza y momentos de una PMF.", icono: "distribuciones" },
 ];
@@ -315,7 +316,7 @@ function herramientaCombinatoria() {
         numeroGrande,
         aproximado && resultado.nota ? alerta({ tipo: "info", texto: resultado.nota }) : null,
         resultado.pasos?.length
-          ? el("ul", { style: { paddingLeft: "1.2em", color: "var(--texto-2)", fontSize: "0.82rem" } }, resultado.pasos.map((p) => el("li", {}, p)))
+          ? el("ol", { class: "pasos-calculo" }, resultado.pasos.map((p) => el("li", {}, p)))
           : null,
         bloqueFormula(resultado.formula, "Expresión utilizada")
       ),
@@ -365,7 +366,7 @@ function herramientaCondicional() {
   const formulario = panel({
     titulo: "Probabilidad condicional",
     subtitulo: "Normaliza la probabilidad conjunta por el espacio de la condición.",
-    icono: "sigma",
+    icono: "condicional",
     contenido: el(
       "div",
       { class: "pila" },
@@ -409,7 +410,7 @@ function herramientaCondicional() {
       });
       renderResultado(datos);
       estado.replaceChildren("Calculado");
-      registrarHistorial({ titulo: "Probabilidad condicional", detalle: `P(A|B) = ${fmtNum(datos.resultado, { decimales: 4 })}`, ruta: "probabilidad/condicional", tipo: "probabilidad", icono: "sigma" });
+      registrarHistorial({ titulo: "Probabilidad condicional", detalle: `P(A|B) = ${fmtNum(datos.resultado, { decimales: 4 })}`, ruta: "probabilidad/condicional", tipo: "probabilidad", icono: "condicional" });
     } catch (error) {
       if (!esCancelacion(error)) {
         const enCampo = errorEnCampo(error, { interseccion: campoInterseccion, condicion: campoCondicion, pa: campoA });
@@ -609,7 +610,7 @@ function herramientaBayes() {
       boton("Ejemplo", {
         variante: "fantasma",
         pequeno: true,
-        icono: "chispa",
+        icono: "ejemplo",
         onClick: () => {
           filas = [
             { nombre: "Enfermedad presente", prior: "0,01", likelihood: "0,95" },
@@ -846,7 +847,7 @@ function herramientaVariable() {
       boton("Dado justo", {
         variante: "fantasma",
         pequeno: true,
-        icono: "chispa",
+        icono: "probabilidad",
         onClick: () => {
           // 1/6 exacto: seis veces 0,1666666667 no suma 1.
           filas = [1, 2, 3, 4, 5, 6].map((x) => ({ x: String(x), p: "1/6" }));
@@ -959,7 +960,7 @@ function herramientaVariable() {
           ],
           contenido: kpis,
         }),
-        el("div", { class: "rejilla rejilla--2" }, panel({ titulo: "Función de masa", icono: "grafico", contenido: hostGrafico }), panel({ titulo: "Cálculo", icono: "info", contenido: el("div", { class: "pila pila--sm" }, bloqueFormula(resultado.formula), tabla({ columnas: ["x", "P(X = x)"], filas: resultado.distribucion.map((d) => [d.x, d.p]), total: resultado.distribucion.length })) }))
+        el("div", { class: "rejilla rejilla--2" }, panel({ titulo: "Función de masa", icono: "grafico", contenido: hostGrafico }), panel({ titulo: "Cálculo", icono: "calculadora", contenido: el("div", { class: "pila pila--sm" }, bloqueFormula(resultado.formula), tabla({ columnas: ["x", "P(X = x)"], filas: resultado.distribucion.map((d) => [d.x, d.p]), total: resultado.distribucion.length })) }))
       )
     );
   }
@@ -1042,7 +1043,7 @@ export async function montar(host, parametro) {
           el(
             "p",
             { class: "vista__subtitulo" },
-            "Cuatro herramientas para contar, condicionar, actualizar con Bayes y resumir variables discretas. Cada resultado muestra la fórmula y su lectura."
+            VISTAS.probabilidad.subtitulo
           )
         ),
         el(

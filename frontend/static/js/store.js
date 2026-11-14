@@ -40,7 +40,7 @@ function escribirJson(clave, valor) {
 }
 
 export const prefs = { ...PREFERENCIAS_POR_DEFECTO, ...leerJson(CLAVE_PREFS, {}) };
-export let hayPrefsLocales = Boolean(localStorage.getItem(CLAVE_PREFS));
+export let hayPrefsLocales = Boolean(leerJson(CLAVE_PREFS, null));
 
 function sanearPrefs() {
   if (!["claro", "oscuro", "sistema"].includes(prefs.tema)) prefs.tema = PREFERENCIAS_POR_DEFECTO.tema;
@@ -131,7 +131,8 @@ export async function inicializarPreferencias() {
   if (!hayPrefsLocales) {
     try {
       const remotas = await api.get("/api/preferences");
-      if (remotas && typeof remotas === "object") {
+      // La navegación puede usarse mientras llega la copia: no pisar cambios nuevos.
+      if (!hayPrefsLocales && remotas && typeof remotas === "object") {
         Object.assign(prefs, remotas);
         sanearPrefs();
       }

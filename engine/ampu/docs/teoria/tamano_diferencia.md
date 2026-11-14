@@ -12,42 +12,28 @@ Estima el tamaño **por grupo** de dos muestras independientes de igual tamaño.
 | `p₁, p₂` | Proporciones de diseño en (0,1) |
 | `d` | Margen absoluto |
 
+## Fórmula y procedimiento
 
-## Función, estadístico o regla de selección
-
-$$
-n_{\bar X_1-\bar X_2}=\left\lceil\frac{z^2(\sigma_1^2+\sigma_2^2)}{d^2}\right\rceil,\quad n_{\hat p_1-\hat p_2}=\left\lceil\frac{z^2[p_1(1-p_1)+p_2(1-p_2)]}{d^2}\right\rceil
-$$
-
-## Función de distribución acumulada (CDF)
-
-CDF de referencia o del estimador bajo las hipótesis indicadas.
+Para una confianza $1-\alpha$, usa el cuantil normal $z=z_{1-\alpha/2}$. Al 95 %, $z\approx1{,}959964$.
 
 $$
-P(D\le t)\approx\Phi\left(\frac{t-\operatorname{E}[D]}{\sqrt{\operatorname{Var}(D)}}\right)
+\begin{aligned}n_{\bar X_1-\bar X_2}&=\left\lceil\frac{z^2(\sigma_1^2+\sigma_2^2)}{d^2}\right\rceil\\[4pt]n_{\hat p_1-\hat p_2}&=\left\lceil\frac{z^2[p_1(1-p_1)+p_2(1-p_2)]}{d^2}\right\rceil\end{aligned}
 $$
 
-## Media, varianza y desviación estándar
+## Diseño y alcance
 
-$$
-\operatorname{Var}(\bar X_1-\bar X_2)=\frac{\sigma_1^2+\sigma_2^2}{n},\quad\sigma_D=\sqrt{\operatorname{Var}(D)}
-$$
-
-Si no se explicita $\sigma=\sqrt{\operatorname{Var}}$, se obtiene como raíz cuadrada de la varianza; cuando no existe, no debe reportarse un valor numérico.
+Ambas fórmulas suponen grupos independientes del mismo tamaño y devuelven $n$ **por grupo**. Se basan en un margen normal aproximado; no incluyen potencia, efecto mínimo detectable, no respuesta ni un diseño por conglomerados.
 
 ## Propiedades y casos especiales
 
-Los tamaños son por brazo y suponen independencia; no incorporan potencia de prueba de hipótesis.
-
-![Esquema de Tamaños para diferencias de medias y proporciones](../imagenes/muestreo.png)
-
-*Figura 1. Representación orientativa del procedimiento o de su distribución de referencia.*
+No redondees desviaciones ni proporciones antes de calcular. Toma el techo al final y considera por separado pérdidas, no respuesta y efecto del diseño.
 
 ## Ejemplo resuelto, paso a paso
 
-1. Con $\sigma_1=3$, $\sigma_2=4$, $d=2$ y confianza 95 %, use $z=1,960$.
-2. Calcule $n=\lceil1,960²(9+16)/4\rceil=25$.
-3. Seleccione 25 unidades **en cada grupo**; total 50.
+1. **Datos.** Para dos medias independientes, usa $\sigma_1=3$, $\sigma_2=4$, margen $d=2$ y confianza del 95 %.
+2. **Sustitución.** $n_0=z^2(3^2+4^2)/2^2\approx24{,}0091$.
+3. **Tamaño.** Redondea hacia arriba: **25** unidades en cada grupo, **50** en total.
+4. **Interpretación.** Este cálculo controla el margen de una diferencia de medias. No es un cálculo de potencia para detectar un efecto. Para diferencias de proporciones, usa la fórmula específica y un margen entre 0 y 1.
 
 ## Referencias
 

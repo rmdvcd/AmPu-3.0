@@ -12,7 +12,7 @@ def muestra_sistematica(poblacion: Sequence, n: int, seed: int | None = None) ->
     """Selecciona n posiciones espaciadas por N/n tras un arranque uniforme.
 
     Se preserva el orden original; una población ordenada periódicamente
-    puede producir una muestra sesgada (reordenar antes si corresponde).
+    puede aumentar mucho la varianza (reordenar antes si corresponde).
     """
     valores = np.asarray(list(poblacion))
     n = validar_tamano(n)

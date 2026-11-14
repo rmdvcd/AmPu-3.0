@@ -2,16 +2,14 @@
 
 ## Definición formal
 
-Cuenta el número de **fracasos** antes de alcanzar el éxito número $r$. En AmPu 3.1 se parametriza exactamente como en `scipy.stats`;
-los eventos fuera del soporte reciben masa/densidad 0.
+Cuenta el número de **fracasos** antes de alcanzar el éxito número $r$.
 
 ## Parámetros y rango
 
-| Parámetro | Significado | Rango | Valor de ejemplo |
+| Parámetro | Significado | Valores admitidos | Ejemplo |
 |---|---|---|---|
-| `r` | Éxitos esperados | ≥ 1; sin límite | `2` |
-| `p` | Probabilidad de éxito | > 0; ≤ 1 | `0.5` |
-
+| `r` | Número de éxitos objetivo | Entero, ≥ 1 | 2 |
+| `p` | Probabilidad de éxito | > 0 y ≤ 1 | 0,5 |
 
 ## Función de masa (PMF)
 
@@ -25,26 +23,13 @@ $$
 F(x)=\sum_{k=0}^{\lfloor x\rfloor}\binom{r+k-1}{k}p^r(1-p)^k
 $$
 
-En general, la CDF es $F(x)=P(X\le x)$. Para una variable continua,
-$P(a\le X\le b)=F(b)-F(a)$; para una discreta los extremos se incluyen
-según los saltos de su CDF. Para una cola superior, consulte la función de supervivencia; no sume densidades continuas.
+La acumulada $F(x)=P(X\le x)$ suma las masas hasta $x$. Para enteros $a\le b$, $P(a\le X\le b)=F(b)-F(a-1)$.
 
 ## Media, varianza y desviación estándar
 
 $$
-\operatorname{E}[X]=\frac{r(1-p)}{p}
+\begin{aligned}\operatorname{E}[X]&=\frac{r(1-p)}{p}\\[4pt]\operatorname{Var}(X)&=\frac{r(1-p)}{p^2}\\[4pt]\sigma_X&=\sqrt{\operatorname{Var}(X)}\end{aligned}
 $$
-
-$$
-\operatorname{Var}(X)=\frac{r(1-p)}{p^2}
-$$
-
-$$
-\sigma_X=\sqrt{\operatorname{Var}(X)}
-$$
-
-En modelos multivariados los momentos anteriores son **por componente**.
-Si el momento no existe, la desviación tampoco está definida.
 
 ## Propiedades y casos especiales
 
@@ -52,14 +37,14 @@ Con $r=1$ se convierte en geométrica de fracasos (que difiere en 1 de la geomé
 
 ![Representación de Binomial negativa](../imagenes/binomial_negativa.png)
 
-*Figura 1. Curva teórica o primera marginal ilustrativa para Binomial negativa; no sustituye a la densidad conjunta de un modelo multivariante.*
+*Figura 1. Binomial negativa: representación ilustrativa de la función de masa.*
 
 ## Ejemplo resuelto, paso a paso
 
-1. Configure `r=2`, `p=0.5` y el evento $x=3$.
-2. Sustituya los parámetros en la fórmula de masa (PMF); obtenga probabilidad **0.125**.
-3. Evalúe la CDF en ese mismo evento: **0.8125**. Para una cola superior, consulte la función de supervivencia; no sume densidades continuas.
-4. Interprete unidades y soporte antes de comunicar el resultado; la UI conserva todos los decimales internos.
+1. **Datos.** Usa `r` = 2, `p` = 0,5 y evalúa el punto $x=3$.
+2. **Sustitución.** $P(X=3)=\binom{4}{3}(0{,}5)^5$. La masa es **0,125**.
+3. **Acumulada.** $F(3)=P(X\le 3)$ ≈ **0,8125**.
+4. **Interpretación.** La masa del paso 2 es la probabilidad de observar exactamente 3. La acumulada incluye también todos los valores menores.
 
 ## Referencias
 

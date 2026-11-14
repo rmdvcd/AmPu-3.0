@@ -2,17 +2,17 @@
 
 ## Definición formal
 
-Distribución acotada definida por mínimo $a$, máximo $b$ y moda $c$ con $a\le c\le b$. En AmPu 3.1 se parametriza exactamente como en `scipy.stats`;
-los eventos fuera del soporte reciben masa/densidad 0.
+Distribución acotada definida por mínimo $a$, máximo $b$ y moda $c$ con $a\le c\le b$.
 
 ## Parámetros y rango
 
-| Parámetro | Significado | Rango | Valor de ejemplo |
+| Parámetro | Significado | Valores admitidos | Ejemplo |
 |---|---|---|---|
-| `a` | Límite inferior | sin límite; sin límite | `0.0` |
-| `b` | Límite superior | sin límite; sin límite | `4.0` |
-| `c` | Moda dentro de [a,b] | sin límite; sin límite | `1.0` |
+| `a` | Límite inferior | Real finito | 0 |
+| `b` | Límite superior | Real finito | 4 |
+| `c` | Moda dentro de [a,b] | Real finito | 1 |
 
+Los parámetros deben cumplir $a<b$ y $a\le c\le b$.
 
 ## Función de densidad (PDF)
 
@@ -26,26 +26,13 @@ $$
 F(x)=\begin{cases}0,&x<a\\\frac{(x-a)^2}{(b-a)(c-a)},&a\le x<c\\1-\frac{(b-x)^2}{(b-a)(b-c)},&c\le x\le b\\1,&x>b\end{cases}
 $$
 
-En general, la CDF es $F(x)=P(X\le x)$. Para una variable continua,
-$P(a\le X\le b)=F(b)-F(a)$; para una discreta los extremos se incluyen
-según los saltos de su CDF. Para una cola superior, consulte la función de supervivencia; no sume densidades continuas.
+La acumulada es $F(x)=P(X\le x)$. Para un intervalo, $P(a\le X\le b)=F(b)-F(a)$. La densidad $f(x)$ no es una probabilidad puntual: $P(X=x)=0$.
 
 ## Media, varianza y desviación estándar
 
 $$
-\operatorname{E}[X]=\frac{a+b+c}{3}
+\begin{aligned}\operatorname{E}[X]&=\frac{a+b+c}{3}\\[4pt]\operatorname{Var}(X)&=\frac{a^2+b^2+c^2-ab-ac-bc}{18}\\[4pt]\sigma_X&=\sqrt{\operatorname{Var}(X)}\end{aligned}
 $$
-
-$$
-\operatorname{Var}(X)=\frac{a^2+b^2+c^2-ab-ac-bc}{18}
-$$
-
-$$
-\sigma_X=\sqrt{\operatorname{Var}(X)}
-$$
-
-En modelos multivariados los momentos anteriores son **por componente**.
-Si el momento no existe, la desviación tampoco está definida.
 
 ## Propiedades y casos especiales
 
@@ -53,14 +40,14 @@ Si $c=a$ o $c=b$, se interpreta la expresión por su límite; la moda está en u
 
 ![Representación de Triangular](../imagenes/triangular.png)
 
-*Figura 1. Curva teórica o primera marginal ilustrativa para Triangular; no sustituye a la densidad conjunta de un modelo multivariante.*
+*Figura 1. Triangular: representación ilustrativa de la función de densidad.*
 
 ## Ejemplo resuelto, paso a paso
 
-1. Configure `a=0.0`, `b=4.0`, `c=1.0` y el evento $x=1$.
-2. Sustituya los parámetros en la fórmula de densidad (PDF); obtenga densidad (no probabilidad puntual) **0.5**.
-3. Evalúe la CDF en ese mismo evento: **0.25**. Para una cola superior, consulte la función de supervivencia; no sume densidades continuas.
-4. Interprete unidades y soporte antes de comunicar el resultado; la UI conserva todos los decimales internos.
+1. **Datos.** Usa `a` = 0, `b` = 4, `c` = 1 y evalúa el punto $x=1$.
+2. **Sustitución.** $f(1)=\frac{2(1-0)}{(4-0)(1-0)}$. La densidad es **0,5**.
+3. **Acumulada.** $F(1)=P(X\le 1)$ ≈ **0,25**.
+4. **Interpretación.** La probabilidad de no superar 1 es aproximadamente 25 %. Para una probabilidad entre dos puntos, resta sus acumuladas.
 
 ## Referencias
 

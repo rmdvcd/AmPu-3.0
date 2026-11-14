@@ -2,16 +2,14 @@
 
 ## Definición formal
 
-Cuenta éxitos en $n$ ensayos de Bernoulli independientes con probabilidad común $p$. En AmPu 3.1 se parametriza exactamente como en `scipy.stats`;
-los eventos fuera del soporte reciben masa/densidad 0.
+Cuenta éxitos en $n$ ensayos de Bernoulli independientes con probabilidad común $p$.
 
 ## Parámetros y rango
 
-| Parámetro | Significado | Rango | Valor de ejemplo |
+| Parámetro | Significado | Valores admitidos | Ejemplo |
 |---|---|---|---|
-| `n` | Ensayos independientes | ≥ 0; sin límite | `10` |
-| `p` | Probabilidad de éxito | ≥ 0; ≤ 1 | `0.5` |
-
+| `n` | Ensayos independientes | Entero, ≥ 0 | 10 |
+| `p` | Probabilidad de éxito | ≥ 0 y ≤ 1 | 0,5 |
 
 ## Función de masa (PMF)
 
@@ -25,26 +23,13 @@ $$
 F(x)=\sum_{k=0}^{\lfloor x\rfloor}\binom{n}{k}p^k(1-p)^{n-k}
 $$
 
-En general, la CDF es $F(x)=P(X\le x)$. Para una variable continua,
-$P(a\le X\le b)=F(b)-F(a)$; para una discreta los extremos se incluyen
-según los saltos de su CDF. Para una cola superior, consulte la función de supervivencia; no sume densidades continuas.
+La acumulada $F(x)=P(X\le x)$ suma las masas hasta $x$. Para enteros $a\le b$, $P(a\le X\le b)=F(b)-F(a-1)$.
 
 ## Media, varianza y desviación estándar
 
 $$
-\operatorname{E}[X]=np
+\begin{aligned}\operatorname{E}[X]&=np\\[4pt]\operatorname{Var}(X)&=np(1-p)\\[4pt]\sigma_X&=\sqrt{\operatorname{Var}(X)}\end{aligned}
 $$
-
-$$
-\operatorname{Var}(X)=np(1-p)
-$$
-
-$$
-\sigma_X=\sqrt{\operatorname{Var}(X)}
-$$
-
-En modelos multivariados los momentos anteriores son **por componente**.
-Si el momento no existe, la desviación tampoco está definida.
 
 ## Propiedades y casos especiales
 
@@ -52,14 +37,14 @@ $p=0$ o $p=1$ dan resultados deterministas. Para $n$ grande y $np,n(1-p)$ sufici
 
 ![Representación de Binomial](../imagenes/binomial.png)
 
-*Figura 1. Curva teórica o primera marginal ilustrativa para Binomial; no sustituye a la densidad conjunta de un modelo multivariante.*
+*Figura 1. Binomial: representación ilustrativa de la función de masa.*
 
 ## Ejemplo resuelto, paso a paso
 
-1. Configure `n=10`, `p=0.5` y el evento $x=5$.
-2. Sustituya los parámetros en la fórmula de masa (PMF); obtenga probabilidad **0.246094**.
-3. Evalúe la CDF en ese mismo evento: **0.623047**. Para una cola superior, consulte la función de supervivencia; no sume densidades continuas.
-4. Interprete unidades y soporte antes de comunicar el resultado; la UI conserva todos los decimales internos.
+1. **Datos.** Usa `n` = 10, `p` = 0,5 y evalúa el punto $x=5$.
+2. **Sustitución.** $P(X=5)=\binom{10}{5}(0{,}5)^{10}$. La masa es **0,246094**.
+3. **Acumulada.** $F(5)=P(X\le 5)$ ≈ **0,623047**.
+4. **Interpretación.** La masa del paso 2 es la probabilidad de observar exactamente 5. La acumulada incluye también todos los valores menores.
 
 ## Referencias
 

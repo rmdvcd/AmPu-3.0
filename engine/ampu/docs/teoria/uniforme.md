@@ -2,16 +2,16 @@
 
 ## Definición formal
 
-Una variable continua con densidad constante en el intervalo $[a,b]$. En AmPu 3.1 se parametriza exactamente como en `scipy.stats`;
-los eventos fuera del soporte reciben masa/densidad 0.
+Una variable continua con densidad constante en el intervalo $[a,b]$.
 
 ## Parámetros y rango
 
-| Parámetro | Significado | Rango | Valor de ejemplo |
+| Parámetro | Significado | Valores admitidos | Ejemplo |
 |---|---|---|---|
-| `a` | Extremo inferior | sin límite; sin límite | `1.0` |
-| `b` | Extremo superior | sin límite; sin límite | `5.0` |
+| `a` | Extremo inferior | Real finito | 1 |
+| `b` | Extremo superior | Real finito | 5 |
 
+Los extremos deben cumplir $a<b$.
 
 ## Función de densidad (PDF)
 
@@ -25,26 +25,13 @@ $$
 F(x)=\begin{cases}0,&x<a\\\dfrac{x-a}{b-a},&a\le x\le b\\1,&x>b\end{cases}
 $$
 
-En general, la CDF es $F(x)=P(X\le x)$. Para una variable continua,
-$P(a\le X\le b)=F(b)-F(a)$; para una discreta los extremos se incluyen
-según los saltos de su CDF. Para una cola superior, consulte la función de supervivencia; no sume densidades continuas.
+La acumulada es $F(x)=P(X\le x)$. Para un intervalo, $P(a\le X\le b)=F(b)-F(a)$. La densidad $f(x)$ no es una probabilidad puntual: $P(X=x)=0$.
 
 ## Media, varianza y desviación estándar
 
 $$
-\operatorname{E}[X]=\frac{a+b}{2}
+\begin{aligned}\operatorname{E}[X]&=\frac{a+b}{2}\\[4pt]\operatorname{Var}(X)&=\frac{(b-a)^2}{12}\\[4pt]\sigma_X&=\sqrt{\operatorname{Var}(X)}\end{aligned}
 $$
-
-$$
-\operatorname{Var}(X)=\frac{(b-a)^2}{12}
-$$
-
-$$
-\sigma_X=\sqrt{\operatorname{Var}(X)}
-$$
-
-En modelos multivariados los momentos anteriores son **por componente**.
-Si el momento no existe, la desviación tampoco está definida.
 
 ## Propiedades y casos especiales
 
@@ -52,14 +39,14 @@ La probabilidad de un punto aislado es cero; se calcula el área entre extremos.
 
 ![Representación de Uniforme continua](../imagenes/uniforme.png)
 
-*Figura 1. Curva teórica o primera marginal ilustrativa para Uniforme continua; no sustituye a la densidad conjunta de un modelo multivariante.*
+*Figura 1. Uniforme continua: representación ilustrativa de la función de densidad.*
 
 ## Ejemplo resuelto, paso a paso
 
-1. Configure `a=1.0`, `b=5.0` y el evento $x=3$.
-2. Sustituya los parámetros en la fórmula de densidad (PDF); obtenga densidad (no probabilidad puntual) **0.25**.
-3. Evalúe la CDF en ese mismo evento: **0.5**. Para una cola superior, consulte la función de supervivencia; no sume densidades continuas.
-4. Interprete unidades y soporte antes de comunicar el resultado; la UI conserva todos los decimales internos.
+1. **Datos.** Usa `a` = 1, `b` = 5 y evalúa el punto $x=3$.
+2. **Sustitución.** $f(3)=1/(5-1)$. La densidad es **0,25**.
+3. **Acumulada.** $F(3)=P(X\le 3)$ ≈ **0,5**.
+4. **Interpretación.** La probabilidad de no superar 3 es aproximadamente 50 %. Para una probabilidad entre dos puntos, resta sus acumuladas.
 
 ## Referencias
 

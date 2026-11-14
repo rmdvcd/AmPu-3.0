@@ -1,3 +1,4 @@
+import { VISTAS } from "../data.js";
 import {
   el,
   panel,
@@ -173,7 +174,7 @@ export async function montar(host, parametro) {
   const buscador = el("div", { class: "lista-busqueda" });
   const entradaBusqueda = el("input", { type: "search", placeholder: "Buscar prueba…", "aria-label": "Buscar prueba estadística" });
   buscador.append(icono("buscar", { tamano: 15 }), entradaBusqueda);
-  const lista = el("div", { class: "lista-modelos", role: "list" });
+  const lista = el("div", { class: "lista-modelos", role: "group", "aria-label": "Pruebas estadísticas" });
   const panelPruebas = panel({
     titulo: "Pruebas",
     subtitulo: `${pruebas.length} métodos disponibles`,
@@ -206,7 +207,7 @@ export async function montar(host, parametro) {
           el(
             "p",
             { class: "vista__subtitulo" },
-            "Trece pruebas con estadístico, p-valor, grados de libertad, intervalo y tamaño del efecto. La interfaz explica los supuestos y evita conclusiones que los datos no sostienen."
+            VISTAS.inferencia.subtitulo
           )
         ),
         el(
@@ -235,7 +236,6 @@ export async function montar(host, parametro) {
             {
               class: "modelo-item",
               type: "button",
-              role: "listitem",
               "aria-pressed": String(p.clave === prueba),
               onClick: () => seleccionar(p.clave),
             },
@@ -254,7 +254,7 @@ export async function montar(host, parametro) {
   function crearCampo(spec, valorInicial, onInput) {
     const comun = {
       etiqueta: spec.etiqueta,
-     codigo: spec.id,
+      codigo: spec.id,
       ayuda: spec.ayuda || "",
       requerido: true,
       valor: valorTexto(valorInicial ?? spec.default ?? ""),
@@ -356,19 +356,21 @@ export async function montar(host, parametro) {
     botonEjecutar = boton("Ejecutar prueba", { icono: "reproducir", dataset: { accionPrimaria: "true" } });
     const botonLimpiar = boton("Limpiar", {
       variante: "fantasma",
-      icono: "basura",
+      icono: "limpiar",
       onClick: () => {
+        controlador?.abort();
         for (const definicion of spec.campos) {
           campos[definicion.id].setValor("");
           campos[definicion.id].limpiarError();
         }
         resultado = null;
-        contenido.replaceChildren(renderInicial(spec));
+        contenido.querySelector(".resultado-prueba")?.remove();
+        contenido.append(renderInicial(spec));
       },
     });
     const botonEjemplo = boton("Cargar ejemplo", {
       variante: "secundario",
-      icono: "chispa",
+      icono: "ejemplo",
       onClick: () => {
         for (const [nombre, valor] of Object.entries(ejemplo)) {
           campos[nombre]?.setValor(valorTexto(valor));
@@ -423,23 +425,12 @@ export async function montar(host, parametro) {
   function renderInicial(spec) {
     return panel({
       titulo: "Listo para ejecutar",
-      icono: "chispa",
+      icono: "info",
+      clase: "resultado-prueba",
       contenido: estadoVacio({
         icono: "inferencia",
         titulo: "Completa los datos y ejecuta la prueba",
-        texto: `Se calcularán el estadístico, el p-valor, el intervalo y el tamaño del efecto de «${spec.nombre}». Si prefieres empezar con datos reales, pulsa Cargar ejemplo.`,
-        acciones: [
-          boton("Ejecutar con el ejemplo", {
-            icono: "reproducir",
-            onClick: () => {
-              const ejemplo = EJEMPLOS_PRUEBA[spec.clave] || {};
-              for (const [nombre, valor] of Object.entries(ejemplo)) {
-                campos[nombre]?.setValor(valorTexto(valor));
-              }
-              ejecutar();
-            },
-          }),
-        ],
+        texto: `Revisa los supuestos de «${spec.nombre}» y pulsa «Ejecutar prueba».`,
       }),
     });
   }
@@ -482,6 +473,14 @@ export async function montar(host, parametro) {
         } else if (definicion.tipo === "entero" && !Number.isInteger(valor)) {
           c.setError("Debe ser un número entero.");
           ok = false;
+        } else if (!c.validar()) {
+          ok = false;
+        } else if (definicion.incluir_minimo === false && definicion.min != null && valor <= definicion.min) {
+          c.setError(`Debe ser mayor que ${fmtNum(definicion.min)}.`);
+          ok = false;
+        } else if (definicion.incluir_maximo === false && definicion.max != null && valor >= definicion.max) {
+          c.setError(`Debe ser menor que ${fmtNum(definicion.max)}.`);
+          ok = false;
         }
       }
     }
@@ -521,7 +520,6 @@ export async function montar(host, parametro) {
     if (controlador) controlador.abort();
     controlador = new AbortController();
     botonEjecutar.cargando(true);
-    const anterior = contenido.querySelector(".resultado-prueba");
     contenido.querySelector(".resultado-prueba")?.setAttribute("aria-busy", "true");
     try {
       const datos = await api.post("/api/inferencia", payload, { senal: controlador.signal });
@@ -827,6 +825,7 @@ export async function montar(host, parametro) {
   /* ------------------------- selección ------------------------- */
 
   function seleccionar(clave) {
+    controlador?.abort();
     prueba = clave;
     resultado = null;
     history.replaceState(null, "", `#/inferencia/${clave}`);
@@ -850,7 +849,7 @@ export async function montar(host, parametro) {
       campos[nombre]?.setValor(valorTexto(valor));
     }
     transito.inferencia = null;
-    setTimeout(ejecutar, 60);
+    ejecutar();
   } else if (transito.inferencia?.prueba) {
     transito.inferencia = null;
   }

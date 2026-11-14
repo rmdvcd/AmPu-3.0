@@ -108,7 +108,7 @@ DISCRETAS: list[Distribucion] = [
     ScipyUnivariante("binomial", "Binomial", True, [P("n", "entero", 0, None, "Ensayos independientes", 10), P("p", "real", 0, 1, "Probabilidad de éxito", 0.5)],
                       lambda n, p: stats.binom(n, p)),
     ScipyUnivariante("binomial_negativa", "Binomial negativa", True,
-                      [P("r", "entero", 1, None, "Éxitos esperados", 2), P("p", "real", 0, 1, "Probabilidad de éxito", 0.5, False)],
+                      [P("r", "entero", 1, None, "Número de éxitos objetivo", 2), P("p", "real", 0, 1, "Probabilidad de éxito", 0.5, False)],
                       lambda r, p: stats.nbinom(r, p)),
     Multinomial(),
     ScipyUnivariante("geometrica", "Geométrica", True, [P("p", "real", 0, 1, "Probabilidad de éxito", 0.5, False)],

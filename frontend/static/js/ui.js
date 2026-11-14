@@ -4,7 +4,7 @@
  */
 
 import { comasComoSeparadores, fmtEntrada, leerMatriz, leerNumero, leerSerie, resumenLectura, tieneComasDudosas } from "./entrada.js";
-import { icono, svgIcono } from "./icons.js";
+import { icono, iconoApp, svgIcono } from "./icons.js";
 
 /** Configuración viva que comparten formato y gráficos (la actualiza store.js). */
 export const config = {
@@ -365,7 +365,7 @@ export function boton(texto, opciones = {}) {
 export const FORMATOS_EXPORTACION = {
   pdf: { texto: "PDF", icono: "documento", descripcion: "Informe completo con tablas y gráfico" },
   xlsx: { texto: "Excel", icono: "tabla", descripcion: "Tablas en un libro de cálculo" },
-  png: { texto: "PNG", icono: "grafico", descripcion: "Solo el gráfico como imagen" },
+  png: { texto: "PNG", icono: "imagen", descripcion: "Solo el gráfico como imagen" },
   csv: { texto: "CSV", icono: "tabla", descripcion: "La primera tabla como texto separado por comas" },
 };
 
@@ -538,7 +538,7 @@ export function campo(opciones = {}) {
   let envolturaControl = null;
 
   if (tipo === "select") {
-    control = el("select", { class: `campo__control ${claseControl}`.trim(), id, deshabilitado });
+    control = el("select", { class: `campo__control ${claseControl}`.trim(), id, disabled: deshabilitado });
     for (const opcion of listaOpciones) {
       const [v, t] = Array.isArray(opcion) ? opcion : [opcion.valor, opcion.texto];
       control.append(el("option", { value: v }, t));
@@ -549,14 +549,14 @@ export function campo(opciones = {}) {
     }
     envolturaControl = control;
   } else if (tipo === "checkbox") {
-    const casilla = el("input", { type: "checkbox", id, checked: Boolean(valor), deshabilitado });
+    const casilla = el("input", { type: "checkbox", id, checked: Boolean(valor), disabled: deshabilitado });
     control = casilla;
     envoltura.append(
       el(
         "label",
         { class: "casilla", for: id },
         casilla,
-        el("span", {}, ayuda || etiqueta || "")
+        el("span", {}, etiqueta || "Activar opción")
       )
     );
   } else if (tipo === "textarea" || tipo === "serie" || tipo === "matriz") {
@@ -566,7 +566,7 @@ export function campo(opciones = {}) {
       rows: filas || (tipo === "matriz" ? 6 : 5),
       placeholder,
       spellcheck: "false",
-      deshabilitado,
+      disabled: deshabilitado,
       autocapitalize: "off",
     });
     control.value = valor ?? "";
@@ -581,7 +581,7 @@ export function campo(opciones = {}) {
       autocomplete: "off",
       spellcheck: "false",
       placeholder,
-      deshabilitado,
+      disabled: deshabilitado,
       "aria-required": requerido ? "true" : null,
     });
     // Los números se muestran con coma decimal, como los escribe el usuario.
@@ -600,7 +600,7 @@ export function campo(opciones = {}) {
     }
   }
 
-  const ayudaNodo = ayuda && tipo !== "checkbox" ? el("p", { class: "campo__ayuda", id: `${id}-ayuda` }, ayuda) : null;
+  const ayudaNodo = ayuda ? el("p", { class: "campo__ayuda", id: `${id}-ayuda` }, ayuda) : null;
   // Vista previa de interpretación: enseña, mientras se escribe, qué números ha leído AmPu.
   const contador = tipo === "serie" || tipo === "matriz"
     ? el("div", { class: "campo__lectura", id: `${id}-lectura`, "aria-live": "polite" })
@@ -1052,7 +1052,7 @@ export function alerta({ tipo = "info", titulo = null, texto = null, acciones = 
   );
 }
 
-export function estadoVacio({ titulo, texto, icono: nombreIcono = "chispa", acciones = null } = {}) {
+export function estadoVacio({ titulo, texto, icono: nombreIcono = "info", acciones = null } = {}) {
   return el(
     "div",
     { class: "estado-vacio" },
@@ -1160,14 +1160,16 @@ export function modal({
     "aria-labelledby": `modal-titulo-${++contadorId}`,
   });
   const idTitulo = dialogo.getAttribute("aria-labelledby");
+  const idSubtitulo = `${idTitulo}-descripcion`;
+  if (subtitulo) dialogo.setAttribute("aria-describedby", idSubtitulo);
   const cabecera = el(
     "header",
     { class: "modal__cabecera" },
-    el(
-      "div",
-      {},
-      el("h2", { class: "modal__titulo", id: idTitulo }, titulo || "Diálogo"),
-      subtitulo ? el("p", { class: "modal__subtitulo" }, subtitulo) : null
+    el("div", { class: "modal__identidad" }, iconoApp(),
+      el("div", { class: "modal__encabezado" },
+        el("h2", { class: "modal__titulo", id: idTitulo }, titulo || "Diálogo"),
+        subtitulo ? el("p", { class: "modal__subtitulo", id: idSubtitulo }, subtitulo) : null
+      )
     ),
     iconoBoton("cerrar", { etiqueta: "Cerrar", onClick: () => cerrar() })
   );
@@ -1192,25 +1194,49 @@ export function modal({
     dialogo.append(pie);
   }
   let cerrado = false;
+  let temporizadorFoco;
   const cerrar = () => {
     if (cerrado) return;
     cerrado = true;
+    clearTimeout(temporizadorFoco);
     if (dialogo.open) dialogo.close();
     dialogo.remove();
-    if (previo && previo.isConnected && typeof previo.focus === "function") {
-      setTimeout(() => previo.focus(), 30);
+    // Restaurar ahora, no con un temporizador que pueda robar el foco a otra vista.
+    if (previo?.isConnected && typeof previo.focus === "function" && !document.querySelector("dialog[open]")) {
+      previo.focus({ preventScroll: true });
     }
     if (alCerrar) alCerrar();
   };
-  dialogo.addEventListener("close", () => {
-    if (!cerrado) {
-      cerrado = true;
-      dialogo.remove();
-      if (previo && previo.isConnected) setTimeout(() => previo.focus(), 30);
-      if (alCerrar) alCerrar();
+  dialogo.addEventListener("close", cerrar);
+  dialogo.addEventListener("keydown", (evento) => {
+    // Un input search consume Esc para vaciarse antes del cancel nativo.
+    // La acción anunciada por el diálogo es cerrar, también con texto escrito.
+    if (evento.key === "Escape" && !evento.defaultPrevented && !evento.isComposing &&
+        !evento.ctrlKey && !evento.metaKey && !evento.altKey && !evento.shiftKey) {
+      evento.preventDefault();
+      evento.stopPropagation();
+      cerrar();
+      return;
+    }
+    if (evento.key !== "Tab" || evento.defaultPrevented || evento.ctrlKey || evento.metaKey || evento.altKey) return;
+    const enfocables = [...dialogo.querySelectorAll('a[href], button, input, textarea, select, [tabindex]')]
+      .filter((nodo) => !nodo.disabled && nodo.tabIndex >= 0 && nodo.getClientRects().length);
+    const primero = enfocables[0];
+    const ultimo = enfocables.at(-1);
+    if (!primero) {
+      evento.preventDefault();
+      dialogo.focus();
+    } else if (evento.shiftKey && (document.activeElement === primero || document.activeElement === dialogo)) {
+      evento.preventDefault();
+      ultimo.focus();
+    } else if (!evento.shiftKey && (document.activeElement === ultimo || document.activeElement === dialogo)) {
+      evento.preventDefault();
+      primero.focus();
     }
   });
   dialogo.addEventListener("click", (evento) => {
+    // Los clics de teclado sobre controles hijos no tienen coordenadas de ratón.
+    if (evento.target !== dialogo) return;
     const rect = dialogo.getBoundingClientRect();
     const fuera =
       evento.clientX < rect.left ||
@@ -1221,7 +1247,8 @@ export function modal({
   });
   (document.getElementById("raiz-modal") || document.body).append(dialogo);
   dialogo.showModal();
-  setTimeout(() => {
+  temporizadorFoco = setTimeout(() => {
+    if (cerrado || !dialogo.open) return;
     const enfocable = cuerpo.querySelector("input:not([type=hidden]), textarea, select, button");
     (enfocable || cabecera.querySelector("button"))?.focus();
   }, 40);

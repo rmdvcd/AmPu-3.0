@@ -16,7 +16,7 @@ export const VISTAS = {
     descripcion: "Explora 26 modelos de probabilidad",
     icono: "distribuciones",
     ceja: "Explorar",
-    subtitulo: "Elige un modelo, ajusta sus parámetros y entiende la masa, la densidad, la acumulada y los cuantiles en un mismo lienzo.",
+    subtitulo: "Explora modelos, probabilidades y cuantiles con sus parámetros.",
     palabras: "distribuciones probabilidad normal binomial poisson modelo pmf pdf cdf cuantil",
   },
   descriptiva: {
@@ -24,7 +24,7 @@ export const VISTAS = {
     descripcion: "Resume una muestra en segundos",
     icono: "descriptiva",
     ceja: "Explorar",
-    subtitulo: "Pega tus datos o carga un CSV: obtén medidas de tendencia central, dispersión, forma, atípicos e histogramas listos para interpretar.",
+    subtitulo: "Resume tus datos y examina su distribución, dispersión y valores atípicos.",
     palabras: "descriptiva media mediana desviacion cuartiles histograma datos csv atipicos",
   },
   probabilidad: {
@@ -32,7 +32,7 @@ export const VISTAS = {
     descripcion: "Combinatoria, condicional y Bayes",
     icono: "probabilidad",
     ceja: "Explorar",
-    subtitulo: "Calcula probabilidades con pasos claros: combinatoria exacta, probabilidad condicional, teorema de Bayes y momentos de variables discretas.",
+    subtitulo: "Combinatoria, probabilidad condicional, Bayes y variables discretas.",
     palabras: "probabilidad combinatoria factorial permutaciones combinaciones bayes condicional",
   },
   inferencia: {
@@ -40,7 +40,7 @@ export const VISTAS = {
     descripcion: "Contrasta hipótesis con contexto",
     icono: "inferencia",
     ceja: "Inferir",
-    subtitulo: "Trece pruebas paramétricas y no paramétricas con estadístico, p-valor, intervalo, tamaño del efecto y una interpretación sin atajos.",
+    subtitulo: "Elige una prueba y revisa sus supuestos antes de interpretar el resultado.",
     palabras: "inferencia prueba hipotesis p-valor t student z chi cuadrado anova correlacion wilcoxon kruskal",
   },
   regresion: {
@@ -48,7 +48,7 @@ export const VISTAS = {
     descripcion: "Ajusta y diagnostica modelos lineales",
     icono: "regresion",
     ceja: "Inferir",
-    subtitulo: "Ajusta una recta o un modelo múltiple, revisa coeficientes e intervalos, analiza residuos y predice nuevas observaciones.",
+    subtitulo: "Ajusta modelos lineales y revisa coeficientes, residuos y predicciones.",
     palabras: "regresion lineal multiple ols r2 residuos prediccion coeficientes",
   },
   muestreo: {
@@ -56,7 +56,7 @@ export const VISTAS = {
     descripcion: "Calcula tamaños y extrae muestras",
     icono: "muestreo",
     ceja: "Diseñar",
-    subtitulo: "Diseña muestras reproducibles: aleatorio simple, sistemático, estratificado proporcional, Neyman, óptimo y por conglomerados.",
+    subtitulo: "Calcula el tamaño y selecciona una muestra reproducible.",
     palabras: "muestreo muestra estratos neyman optimo conglomerados tamano poblacion",
   },
   simulacion: {
@@ -64,7 +64,7 @@ export const VISTAS = {
     descripcion: "Monte Carlo y bondad de ajuste",
     icono: "simulacion",
     ceja: "Diseñar",
-    subtitulo: "Experimenta con Monte Carlo, genera muestras, ajusta distribuciones y compara cuantiles. Todo con semillas reproducibles.",
+    subtitulo: "Experimenta con Monte Carlo, muestras aleatorias, ajustes y QQ-plots.",
     palabras: "simulacion monte carlo pi integral ajuste qq muestra semilla",
   },
   teoria: {
@@ -72,7 +72,7 @@ export const VISTAS = {
     descripcion: "57 lecciones con fórmulas",
     icono: "teoria",
     ceja: "Aprender",
-    subtitulo: "Definiciones, fórmulas, propiedades y ejemplos resueltos. Cada lección se conecta con la herramienta que la pone en práctica.",
+    subtitulo: "Consulta definiciones, fórmulas y ejemplos conectados con las herramientas.",
     palabras: "teoria lecciones formulas apuntes aprender katex",
   },
   ajustes: {
@@ -80,7 +80,7 @@ export const VISTAS = {
     descripcion: "Apariencia, formato y datos",
     icono: "ajustes",
     ceja: "Sistema",
-    subtitulo: "Personaliza la lectura y el formato, revisa el estado del motor y controla los datos guardados en tu equipo.",
+    subtitulo: "Configura la apariencia, el cálculo y los datos guardados.",
     palabras: "ajustes preferencias tema formato decimales datos privacidad historial",
   },
 };
@@ -91,6 +91,7 @@ export const NAV = [
   { grupo: "Inferir", items: ["inferencia", "regresion"] },
   { grupo: "Diseñar", items: ["muestreo", "simulacion"] },
   { grupo: "Aprender", items: ["teoria"] },
+  { grupo: "Sistema", items: ["ajustes"] },
 ];
 
 export const ORDEN_VISTAS = NAV.flatMap((g) => g.items);
@@ -103,33 +104,45 @@ export const ETIQUETAS_CATEGORIA = {
   otros: "Referencia",
 };
 
-export const ATAJOS = [
-  { teclas: ["Ctrl", "K"], texto: "Buscar una herramienta, modelo o lección" },
-  { teclas: ["Ctrl", "Enter"], texto: "Calcular en el formulario activo" },
-  { teclas: ["Ctrl", "Shift", "L"], texto: "Alternar tema claro y oscuro" },
-  { teclas: ["F1"], texto: "Abrir la ayuda y los atajos (también «?» fuera de un campo)" },
-  { teclas: ["Esc"], texto: "Cancelar el cálculo en curso; cerrar diálogos y avisos" },
-  { teclas: ["Alt", "G"], texto: "Ir al gráfico" },
-  { teclas: ["←", "→"], texto: "En un gráfico: recorrer los valores punto a punto" },
-  { teclas: ["+", "−", "0"], texto: "En un gráfico: acercar, alejar y restablecer la vista" },
-  { teclas: ["Shift", "←/→"], texto: "En un gráfico ampliado: desplazar la vista" },
+export const GRUPOS_ATAJOS = [
+  { id: "general", titulo: "Navegación y apariencia", icono: "teclado" },
+  { id: "calculo", titulo: "Cálculos y diálogos", icono: "calculadora" },
+  { id: "graficos", titulo: "Exploración de gráficos", icono: "grafico", nota: "Primero usa el atajo «Ir al primer gráfico visible» o enfócalo con Tab. El zoom está disponible en los gráficos que lo admiten." },
 ];
+
+// Atajos de Windows. Cada alternativa es una combinación independiente.
+// Las acciones globales se resuelven con estas mismas definiciones en atajos.js.
+export const ATAJOS = [
+  { id: "buscar", grupo: "general", texto: "Buscar herramientas y lecciones", detalle: "Abre el buscador de AmPu.", combinaciones: [["Ctrl", "K"]], accion: "buscar" },
+  { id: "tema", grupo: "general", texto: "Cambiar el tema", detalle: "Recorre claro, oscuro y sistema.", combinaciones: [["Ctrl", "Shift", "L"]], accion: "tema", enDialogo: true },
+  { id: "ayuda", grupo: "general", texto: "Abrir ayuda y atajos", detalle: "Usa «?» solo fuera de los campos de entrada.", combinaciones: [["F1"], ["?"]], accion: "ayuda", enDialogo: true },
+  { id: "calcular", grupo: "calculo", texto: "Calcular en el formulario activo", detalle: "Ejecuta el botón principal disponible; no actúa detrás de un diálogo.", combinaciones: [["Ctrl", "Enter"]], accion: "calcular" },
+  { id: "escape", grupo: "calculo", texto: "Cerrar o cancelar", detalle: "Cierra el diálogo o el menú. Fuera de ellos, cancela el cálculo en curso.", combinaciones: [["Esc"]], accion: "escape" },
+  { id: "grafico", grupo: "graficos", texto: "Ir al primer gráfico visible", detalle: "Fuera de los campos de entrada.", combinaciones: [["Alt", "G"]], accion: "grafico", fueraDeCampo: true },
+  { id: "recorrer", grupo: "graficos", texto: "Recorrer los valores", detalle: "Muestra el punto anterior o siguiente.", combinaciones: [["←"], ["→"]] },
+  { id: "extremos", grupo: "graficos", texto: "Ir al primer o último valor", combinaciones: [["Home"], ["End"]] },
+  { id: "zoom", grupo: "graficos", texto: "Acercar o alejar", detalle: "Con el foco en un gráfico con zoom.", combinaciones: [["+"], ["−"]] },
+  { id: "restablecer", grupo: "graficos", texto: "Restablecer la vista del gráfico", detalle: "También puedes usar Esc si el gráfico está ampliado.", combinaciones: [["0"]] },
+  { id: "desplazar", grupo: "graficos", texto: "Desplazar la vista", detalle: "En un gráfico ampliado.", combinaciones: [["Shift", "←"], ["Shift", "→"]] },
+];
+
+export const LECCIONES_MUESTREO = {
+  finito: "muestreo_finito",
+  infinito: "muestreo_infinito",
+  sistematico: "muestreo_sistematico",
+  proporcional: "muestreo_estratificado",
+  neyman: "muestreo_neyman",
+  optimo: "muestreo_optimo",
+  conglomerados: "muestreo_conglomerados",
+};
 
 /** Herramienta que practica cada lección de teoría. */
 export function herramientaDeLeccion(clave, metaDatos) {
   const dist = metaDatos?.distribuciones?.some((d) => d.clave === clave);
   if (dist) return { ruta: `distribuciones/${clave}`, etiqueta: `Abrir ${clave.replaceAll("_", " ")}` };
   if (clave.startsWith("muestreo") || clave.startsWith("tamano")) {
-    const mapa = {
-      muestreo_finito: "finito",
-      muestreo_infinito: "infinito",
-      muestreo_sistematico: "sistematico",
-      muestreo_estratificado: "proporcional",
-      muestreo_neyman: "neyman",
-      muestreo_optimo: "optimo",
-      muestreo_conglomerados: "conglomerados",
-    };
-    return { ruta: `muestreo/${mapa[clave] || "finito"}`, etiqueta: "Abrir diseño muestral" };
+    const metodo = Object.keys(LECCIONES_MUESTREO).find((m) => LECCIONES_MUESTREO[m] === clave);
+    return { ruta: `muestreo/${metodo || "finito"}`, etiqueta: "Abrir diseño muestral" };
   }
   const pruebas = {
     prueba_t_una: "t_una",

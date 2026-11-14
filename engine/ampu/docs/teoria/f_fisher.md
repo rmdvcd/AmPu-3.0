@@ -2,16 +2,14 @@
 
 ## Definición formal
 
-Cociente de dos chi-cuadrados independientes normalizados por sus grados de libertad $d_1,d_2$. En AmPu 3.1 se parametriza exactamente como en `scipy.stats`;
-los eventos fuera del soporte reciben masa/densidad 0.
+Cociente de dos chi-cuadrados independientes normalizados por sus grados de libertad $d_1,d_2$.
 
 ## Parámetros y rango
 
-| Parámetro | Significado | Rango | Valor de ejemplo |
+| Parámetro | Significado | Valores admitidos | Ejemplo |
 |---|---|---|---|
-| `gl1` | Grados de libertad del numerador | > 0; sin límite | `5.0` |
-| `gl2` | Grados de libertad del denominador | > 0; sin límite | `10.0` |
-
+| `gl1` | Grados de libertad del numerador | > 0 | 5 |
+| `gl2` | Grados de libertad del denominador | > 0 | 10 |
 
 ## Función de densidad (PDF)
 
@@ -25,26 +23,15 @@ $$
 F(x)=I_{d_1x/(d_1x+d_2)}(d_1/2,d_2/2)
 $$
 
-En general, la CDF es $F(x)=P(X\le x)$. Para una variable continua,
-$P(a\le X\le b)=F(b)-F(a)$; para una discreta los extremos se incluyen
-según los saltos de su CDF. Para una cola superior, consulte la función de supervivencia; no sume densidades continuas.
+La acumulada es $F(x)=P(X\le x)$. Para un intervalo, $P(a\le X\le b)=F(b)-F(a)$. La densidad $f(x)$ no es una probabilidad puntual: $P(X=x)=0$.
 
 ## Media, varianza y desviación estándar
 
 $$
-\operatorname{E}[X]=\frac{d_2}{d_2-2}\ (d_2>2)
+\begin{aligned}\operatorname{E}[X]&=\frac{d_2}{d_2-2}\ (d_2>2)\\[4pt]\operatorname{Var}(X)&=\frac{2d_2^2(d_1+d_2-2)}{d_1(d_2-2)^2(d_2-4)}\ (d_2>4)\\[4pt]\sigma_X&=\sqrt{\operatorname{Var}(X)}\end{aligned}
 $$
 
-$$
-\operatorname{Var}(X)=\frac{2d_2^2(d_1+d_2-2)}{d_1(d_2-2)^2(d_2-4)}\ (d_2>4)
-$$
-
-$$
-\sigma_X=\sqrt{\operatorname{Var}(X)}
-$$
-
-En modelos multivariados los momentos anteriores son **por componente**.
-Si el momento no existe, la desviación tampoco está definida.
+Los momentos solo existen bajo las condiciones indicadas; si la varianza no existe, la desviación estándar tampoco está definida.
 
 ## Propiedades y casos especiales
 
@@ -52,14 +39,14 @@ La cola derecha es habitual en ANOVA. En SciPy los grados de libertad son parám
 
 ![Representación de F de Fisher](../imagenes/f_fisher.png)
 
-*Figura 1. Curva teórica o primera marginal ilustrativa para F de Fisher; no sustituye a la densidad conjunta de un modelo multivariante.*
+*Figura 1. F de Fisher: representación ilustrativa de la función de densidad.*
 
 ## Ejemplo resuelto, paso a paso
 
-1. Configure `gl1=5.0`, `gl2=10.0` y el evento $x=1$.
-2. Sustituya los parámetros en la fórmula de densidad (PDF); obtenga densidad (no probabilidad puntual) **0.49548**.
-3. Evalúe la CDF en ese mismo evento: **0.534881**. Para una cola superior, consulte la función de supervivencia; no sume densidades continuas.
-4. Interprete unidades y soporte antes de comunicar el resultado; la UI conserva todos los decimales internos.
+1. **Datos.** Usa `gl1` = 5, `gl2` = 10 y evalúa el punto $x=1$.
+2. **Sustitución.** Sustituye los grados de libertad y $x=1$ en la PDF: **0,49548**. Para la CDF, usa $u=\frac{5\cdot1}{5\cdot1+10}=\frac13$ en la beta incompleta regularizada.
+3. **Acumulada.** $F(1)=P(X\le 1)$ ≈ **0,534881**.
+4. **Interpretación.** La probabilidad de no superar 1 es aproximadamente 53,49 %. Para una probabilidad entre dos puntos, resta sus acumuladas.
 
 ## Referencias
 

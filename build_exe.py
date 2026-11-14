@@ -1,4 +1,4 @@
-"""Empaqueta AmPu 3.1 como aplicación de escritorio con PyInstaller.
+"""Empaqueta AmPu como aplicación de escritorio con PyInstaller.
 
 Uso:
     PYTHONPATH=vendor python3 build_exe.py
@@ -39,6 +39,7 @@ def preparar_entorno() -> Path:
     shutil.copytree(ENGINE_DIR, BUILD_DIR / "engine", ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
     shutil.copy2(BASE_DIR / "app.py", BUILD_DIR / "app.py")
     shutil.copy2(BASE_DIR / "main.py", BUILD_DIR / "main.py")
+    shutil.copy2(BASE_DIR / "escritorio.py", BUILD_DIR / "escritorio.py")
     if (BASE_DIR / "requirements.txt").exists():
         shutil.copy2(BASE_DIR / "requirements.txt", BUILD_DIR / "requirements.txt")
     return BUILD_DIR
@@ -46,7 +47,7 @@ def preparar_entorno() -> Path:
 
 def construir(build_dir: Path) -> Path:
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-    destino = OUTPUT_DIR / (f"{APP_NAME}.exe" if os.name == "nt" else APP_NAME)
+    destino = OUTPUT_DIR / (f"{APP_NAME}.exe" if sys.platform == "win32" else APP_NAME)
     if destino.exists():
         destino.unlink()
 
@@ -95,8 +96,10 @@ def construir(build_dir: Path) -> Path:
         "mpmath",
         str(build_dir / "main.py"),
     ]
-    if os.name == "nt":
+    if sys.platform == "win32":
         cmd.insert(4, "--windowed")
+        # La importación de la bandeja es diferida y solo existe en Windows.
+        cmd[-1:-1] = ["--hidden-import", "pystray._win32", "--hidden-import", "PIL.IcoImagePlugin"]
 
     entorno = dict(os.environ)
     entorno["PYTHONPATH"] = os.pathsep.join([str(VENDOR_DIR), str(build_dir / "engine"), entorno.get("PYTHONPATH", "")])
