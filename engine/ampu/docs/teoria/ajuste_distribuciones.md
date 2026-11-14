@@ -2,7 +2,7 @@
 
 ## Definición formal
 
-Busca parámetros que maximizan verosimilitud con límites declarados usando scipy.stats.fit.
+Estima los parámetros de una familia de distribuciones por máxima verosimilitud y compara su ajuste a los datos.
 
 ## Parámetros y rango
 
@@ -12,45 +12,28 @@ Busca parámetros que maximizan verosimilitud con límites declarados usando sci
 | `θ` | Parámetros del modelo dentro de límites |
 | `AIC` | Criterio de información para comparar modelos |
 
-
-## Función, estadístico o regla de selección
+## Fórmula y procedimiento
 
 $$
 \hat\theta=\operatorname*{arg\,max}_{\theta}\sum_{i=1}^n\log f(x_i;\theta),\quad\mathrm{AIC}=2k-2\log L(\hat\theta)
 $$
 
-## Función de distribución acumulada (CDF)
+## Ajuste e interpretación
 
-CDF de referencia o del estimador bajo las hipótesis indicadas.
-
-$$
-F_{\hat\theta}(x)=\int_{-\infty}^{x}f(t;\hat\theta)\,\mathrm{d}t
-$$
-
-## Media, varianza y desviación estándar
-
-$$
-\operatorname{E}_{\hat\theta}[X]=\int x f(x;\hat\theta)\,\mathrm{d}x,\quad\sigma=\sqrt{\operatorname{Var}_{\hat\theta}(X)}
-$$
-
-Si no se explicita $\sigma=\sqrt{\operatorname{Var}}$, se obtiene como raíz cuadrada de la varianza; cuando no existe, no debe reportarse un valor numérico.
+AmPu ajusta de forma determinista por máxima verosimilitud. En familias positivas fija la localización en 0; en beta fija además la escala en 1. Solo se cuentan los parámetros libres en AIC. El histograma y el QQ-plot ayudan a detectar desacuerdos que una cifra aislada no muestra.
 
 ## Propiedades y casos especiales
 
-KS tras estimar parámetros es **exploratoria**: su p sin corrección no debe usarse como prueba formal. Compare AIC solo en los mismos datos.
-
-![Esquema de Ajuste y comparación de distribuciones](../imagenes/analisis.png)
-
-*Figura 1. Representación orientativa del procedimiento o de su distribución de referencia.*
+El p-valor KS sin corrección tras estimar parámetros es **exploratorio**, no una prueba formal de bondad de ajuste. Compara AIC solo con los mismos datos y el mismo tratamiento de observaciones.
 
 ## Ejemplo resuelto, paso a paso
 
-1. Cargue una muestra positiva y elija exponencial.
-2. Limite localización en cero y ajuste escala por máxima verosimilitud.
-3. Revise histograma vs PDF, AIC y QQ-plot antes de concluir.
+1. **Datos.** Usa `1 2 3 4 5` y elige la familia exponencial. AmPu fija la localización en 0.
+2. **Estimación.** La escala de máxima verosimilitud es la media, **3**; la tasa equivalente es $1/3$.
+3. **Comparación.** $\log L=-5\log(3)-5$. Con un parámetro libre, $\mathrm{AIC}=2-2\log L\approx$ **22,986123**.
+4. **Interpretación.** Compara AIC solo entre modelos ajustados a estas mismas observaciones. El KS es exploratorio porque los parámetros se estimaron con esos datos.
 
 ## Referencias
 
-- Cochran, W. G. (1977). *Sampling Techniques* (3.ª ed.). Wiley.
 - Casella, G., & Berger, R. L. (2002). *Statistical Inference* (2.ª ed.). Duxbury.
 - Virtanen, P., et al. (2020). SciPy 1.0: Fundamental algorithms for scientific computing in Python. *Nature Methods, 17*, 261–272. https://doi.org/10.1038/s41592-019-0686-2

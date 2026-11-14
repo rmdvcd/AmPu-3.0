@@ -12,42 +12,26 @@ Distribuye tamaño estratificado según el tamaño y la variabilidad de cada est
 | `S_h` | Desviación esperada (≥0) |
 | `n` | Tamaño total |
 
-
-## Función, estadístico o regla de selección
+## Fórmula y procedimiento
 
 $$
 n_h\approx n\frac{N_hS_h}{\sum_j N_jS_j}
 $$
 
-## Función de distribución acumulada (CDF)
+## Selección e interpretación
 
-CDF del indicador de inclusión o aproximación de diseño; no existe una única CDF de toda la técnica.
-
-$$
-P(I_{hi}\le t)=\begin{cases}0,&t<0\\1-n_h/N_h,&0\le t<1\\1,&t\ge1\end{cases}
-$$
-
-## Media, varianza y desviación estándar
-
-$$
-\operatorname{E}[I_{hi}]=n_h/N_h,\quad\operatorname{Var}(I_{hi})=(n_h/N_h)(1-n_h/N_h)
-$$
-
-Si no se explicita $\sigma=\sqrt{\operatorname{Var}}$, se obtiene como raíz cuadrada de la varianza; cuando no existe, no debe reportarse un valor numérico.
+Con costes unitarios iguales y tamaño total fijado, Neyman minimiza la varianza aproximada de la media estratificada al asignar en proporción a $N_hS_h$. Las desviaciones son estimaciones previas, no datos inventados para favorecer un estrato.
 
 ## Propiedades y casos especiales
 
 Se redondea preservando la suma y la capacidad. Si todas las $S_h=0$, no hay asignación informativa por dispersión.
 
-![Esquema de Asignación de Neyman](../imagenes/muestreo.png)
-
-*Figura 1. Representación orientativa del procedimiento o de su distribución de referencia.*
-
 ## Ejemplo resuelto, paso a paso
 
-1. Tome $(N_1,S_1)=(100,8)$, $(N_2,S_2)=(200,4)$, $n=40$.
-2. Los pesos de Neyman son 800 y 800.
-3. Asigne $n_1=n_2=20$, en vez de los tamaños proporcionales 13 y 27.
+1. **Datos.** Usa $(N_A,S_A)=(100;8)$ y $(N_B,S_B)=(200;4)$, con tamaño total 40.
+2. **Pesos.** Los productos $N_AS_A$ y $N_BS_B$ son 800 y 800.
+3. **Asignación.** $n_A=40(800/1600)=$ **20** y $n_B=$ **20**. Selecciona ese número sin reemplazo en cada estrato, con semilla 42.
+4. **Interpretación.** El estrato más variable recibe más muestra que con asignación puramente proporcional. Los desvíos esperados deben proceder de información previa fiable.
 
 ## Referencias
 

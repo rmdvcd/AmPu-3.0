@@ -12,42 +12,26 @@ Tras un inicio aleatorio sobre una lista ordenada, elige elementos a intervalos 
 | `n` | Unidades deseadas (1 ≤ n ≤ N) |
 | `r` | Inicio uniforme en [0, N/n) |
 
-
-## Función, estadístico o regla de selección
+## Fórmula y procedimiento
 
 $$
 k=N/n,\qquad j_i=\lfloor r+ik\rfloor,\quad i=0,\ldots,n-1
 $$
 
-## Función de distribución acumulada (CDF)
+## Selección e interpretación
 
-CDF del indicador de inclusión o aproximación de diseño; no existe una única CDF de toda la técnica.
-
-$$
-P(I_i\le t)=\begin{cases}0,&t<0\\1-n/N,&0\le t<1\\1,&t\ge1\end{cases}
-$$
-
-## Media, varianza y desviación estándar
-
-$$
-\operatorname{E}[I_i]=n/N,\quad\operatorname{Var}(I_i)=(n/N)(1-n/N)
-$$
-
-Si no se explicita $\sigma=\sqrt{\operatorname{Var}}$, se obtiene como raíz cuadrada de la varianza; cuando no existe, no debe reportarse un valor numérico.
+Un inicio uniforme genera posiciones separadas por $N/n$. Los índices internos parten de cero; los identificadores predeterminados de AmPu parten de uno. El inicio debe ser aleatorio: elegirlo por conveniencia elimina la justificación probabilística del diseño.
 
 ## Propiedades y casos especiales
 
-Una periodicidad de la lista correlacionada con $k$ puede sesgar la muestra; se debe aleatorizar la lista si procede.
-
-![Esquema de Muestreo sistemático](../imagenes/muestreo.png)
-
-*Figura 1. Representación orientativa del procedimiento o de su distribución de referencia.*
+Una periodicidad alineada con el salto puede aumentar mucho la varianza y producir una muestra poco representativa; no implica por sí sola sesgo del estimador si el inicio se elige realmente al azar.
 
 ## Ejemplo resuelto, paso a paso
 
-1. Si $N=40$ y $n=10$, el paso es $k=4$.
-2. Con inicio $r=2$, los índices (desde cero) son 2, 6, 10, …, 38.
-3. Extraiga esas 10 unidades, en orden y sin duplicados.
+1. **Datos.** Usa una lista de 40 unidades, tamaño 10, semilla 0 y tamaño automático desactivado.
+2. **Paso.** El salto es $k=40/10=4$. La semilla da un inicio aleatorio $r\approx2{,}5478$.
+3. **Selección.** Los índices desde cero son 2, 6, 10, …, 38. Como AmPu numera los identificadores desde 1, muestra **3, 7, 11, …, 39**: **10** unidades distintas.
+4. **Precaución.** Una lista con periodicidad alineada con el salto puede dar una muestra poco representativa. Revisa el orden de la lista antes de aplicar el diseño.
 
 ## Referencias
 

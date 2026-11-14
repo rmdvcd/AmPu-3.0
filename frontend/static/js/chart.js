@@ -651,7 +651,7 @@ export function dibujar(host, cfg = {}) {
   };
   if (conZoom) {
     nodoSvg.addEventListener("wheel", (evento) => {
-      if (!evento.ctrlKey && !evento.metaKey) return; // sin Ctrl, la rueda sigue desplazando la página
+      if (!evento.ctrlKey || evento.metaKey) return; // sin Ctrl, la rueda sigue desplazando la página
       evento.preventDefault();
       const rect = nodoSvg.getBoundingClientRect();
       const px = ((evento.clientX - rect.left) / rect.width) * ancho;
@@ -676,7 +676,8 @@ export function dibujar(host, cfg = {}) {
   }
 
   nodoSvg.addEventListener("keydown", (evento) => {
-    if (conZoom && !evento.ctrlKey && !evento.metaKey && !evento.altKey) {
+    if (evento.defaultPrevented || evento.isComposing || evento.ctrlKey || evento.metaKey || evento.altKey) return;
+    if (conZoom) {
       if (evento.key === "+" || evento.key === "=") { evento.preventDefault(); hacerZoom(0.6, undefined, { foco: true }); return; }
       if (evento.key === "-" || evento.key === "_") { evento.preventDefault(); hacerZoom(1 / 0.6, undefined, { foco: true }); return; }
       if (evento.key === "0" || evento.key === "Escape") {

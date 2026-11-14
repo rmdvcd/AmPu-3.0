@@ -1,0 +1,1454 @@
+[
+  {
+    "clave": "bernoulli",
+    "ruta": "/api/distribucion/calcular",
+    "entrada": {
+      "clave": "bernoulli",
+      "parametros": {
+        "p": 0.4
+      },
+      "x": 1,
+      "q": 0.5,
+      "puntos": 41
+    },
+    "esperado": {
+      "resumen.densidad.valor": 0.4,
+      "resumen.acumulada.valor": 1.0
+    },
+    "texto_verificado": [
+      "0,4",
+      "1"
+    ]
+  },
+  {
+    "clave": "beta",
+    "ruta": "/api/distribucion/calcular",
+    "entrada": {
+      "clave": "beta",
+      "parametros": {
+        "alpha": 2.0,
+        "beta": 5.0
+      },
+      "x": 0.3,
+      "q": 0.5,
+      "puntos": 41
+    },
+    "esperado": {
+      "resumen.densidad.valor": 2.1608999999999994,
+      "resumen.acumulada.valor": 0.5798250000000003
+    },
+    "texto_verificado": [
+      "2,1609",
+      "0,579825"
+    ]
+  },
+  {
+    "clave": "binomial",
+    "ruta": "/api/distribucion/calcular",
+    "entrada": {
+      "clave": "binomial",
+      "parametros": {
+        "n": 10,
+        "p": 0.5
+      },
+      "x": 5,
+      "q": 0.5,
+      "puntos": 41
+    },
+    "esperado": {
+      "resumen.densidad.valor": 0.24609375000000003,
+      "resumen.acumulada.valor": 0.623046875
+    },
+    "texto_verificado": [
+      "0,246094",
+      "0,623047"
+    ]
+  },
+  {
+    "clave": "binomial_negativa",
+    "ruta": "/api/distribucion/calcular",
+    "entrada": {
+      "clave": "binomial_negativa",
+      "parametros": {
+        "r": 2,
+        "p": 0.5
+      },
+      "x": 3,
+      "q": 0.5,
+      "puntos": 41
+    },
+    "esperado": {
+      "resumen.densidad.valor": 0.125,
+      "resumen.acumulada.valor": 0.8125
+    },
+    "texto_verificado": [
+      "0,125",
+      "0,8125"
+    ]
+  },
+  {
+    "clave": "cauchy",
+    "ruta": "/api/distribucion/calcular",
+    "entrada": {
+      "clave": "cauchy",
+      "parametros": {
+        "centro": 0.0,
+        "escala": 1.0
+      },
+      "x": 1,
+      "q": 0.5,
+      "puntos": 41
+    },
+    "esperado": {
+      "resumen.densidad.valor": 0.15915494309189535,
+      "resumen.acumulada.valor": 0.75
+    },
+    "texto_verificado": [
+      "0,159155",
+      "0,75"
+    ]
+  },
+  {
+    "clave": "chi_cuadrado",
+    "ruta": "/api/distribucion/calcular",
+    "entrada": {
+      "clave": "chi_cuadrado",
+      "parametros": {
+        "gl": 5.0
+      },
+      "x": 2,
+      "q": 0.5,
+      "puntos": 41
+    },
+    "esperado": {
+      "resumen.densidad.valor": 0.1383691658068649,
+      "resumen.acumulada.valor": 0.15085496391539038
+    },
+    "texto_verificado": [
+      "0,138369",
+      "0,150855"
+    ]
+  },
+  {
+    "clave": "dirichlet",
+    "ruta": "/api/distribucion/calcular",
+    "entrada": {
+      "clave": "dirichlet",
+      "parametros": {
+        "alpha": [
+          2.0,
+          3.0,
+          4.0
+        ]
+      },
+      "x": [
+        0.2,
+        0.3,
+        0.5
+      ],
+      "q": 0.5,
+      "puntos": 41
+    },
+    "esperado": {
+      "resumen.densidad.valor": 7.560000000000013,
+      "resumen.acumulada.valor": [
+        0.4966835200000002,
+        0.4482261899999998,
+        0.63671875
+      ]
+    },
+    "texto_verificado": [
+      "7,56",
+      "(0,496684; 0,448226; 0,636719)"
+    ]
+  },
+  {
+    "clave": "erlang",
+    "ruta": "/api/distribucion/calcular",
+    "entrada": {
+      "clave": "erlang",
+      "parametros": {
+        "k": 3,
+        "tasa": 1.0
+      },
+      "x": 3,
+      "q": 0.5,
+      "puntos": 41
+    },
+    "esperado": {
+      "resumen.densidad.valor": 0.22404180765538775,
+      "resumen.acumulada.valor": 0.5768099188731566
+    },
+    "texto_verificado": [
+      "0,224042",
+      "0,57681"
+    ]
+  },
+  {
+    "clave": "exponencial",
+    "ruta": "/api/distribucion/calcular",
+    "entrada": {
+      "clave": "exponencial",
+      "parametros": {
+        "tasa": 1.0
+      },
+      "x": 4,
+      "q": 0.5,
+      "puntos": 41
+    },
+    "esperado": {
+      "resumen.densidad.valor": 0.01831563888873418,
+      "resumen.acumulada.valor": 0.9816843611112658
+    },
+    "texto_verificado": [
+      "0,018316",
+      "0,981684"
+    ]
+  },
+  {
+    "clave": "f_fisher",
+    "ruta": "/api/distribucion/calcular",
+    "entrada": {
+      "clave": "f_fisher",
+      "parametros": {
+        "gl1": 5.0,
+        "gl2": 10.0
+      },
+      "x": 1,
+      "q": 0.5,
+      "puntos": 41
+    },
+    "esperado": {
+      "resumen.densidad.valor": 0.4954797834866378,
+      "resumen.acumulada.valor": 0.5348805734622
+    },
+    "texto_verificado": [
+      "0,49548",
+      "0,534881"
+    ]
+  },
+  {
+    "clave": "gamma",
+    "ruta": "/api/distribucion/calcular",
+    "entrada": {
+      "clave": "gamma",
+      "parametros": {
+        "forma": 2.0,
+        "escala": 2.0
+      },
+      "x": 3,
+      "q": 0.5,
+      "puntos": 41
+    },
+    "esperado": {
+      "resumen.densidad.valor": 0.16734762011132237,
+      "resumen.acumulada.valor": 0.4421745996289252
+    },
+    "texto_verificado": [
+      "0,167348",
+      "0,442175"
+    ]
+  },
+  {
+    "clave": "geometrica",
+    "ruta": "/api/distribucion/calcular",
+    "entrada": {
+      "clave": "geometrica",
+      "parametros": {
+        "p": 0.5
+      },
+      "x": 5,
+      "q": 0.5,
+      "puntos": 41
+    },
+    "esperado": {
+      "resumen.densidad.valor": 0.03125,
+      "resumen.acumulada.valor": 0.96875
+    },
+    "texto_verificado": [
+      "0,03125",
+      "0,96875"
+    ]
+  },
+  {
+    "clave": "hipergeometrica",
+    "ruta": "/api/distribucion/calcular",
+    "entrada": {
+      "clave": "hipergeometrica",
+      "parametros": {
+        "N": 30,
+        "K": 12,
+        "n": 8
+      },
+      "x": 3,
+      "q": 0.5,
+      "puntos": 41
+    },
+    "esperado": {
+      "resumen.densidad.valor": 0.32205435743666627,
+      "resumen.acumulada.valor": 0.604113327951409
+    },
+    "texto_verificado": [
+      "0,322054",
+      "0,604113"
+    ]
+  },
+  {
+    "clave": "logistica",
+    "ruta": "/api/distribucion/calcular",
+    "entrada": {
+      "clave": "logistica",
+      "parametros": {
+        "mu": 0.0,
+        "escala": 1.0
+      },
+      "x": 1,
+      "q": 0.5,
+      "puntos": 41
+    },
+    "esperado": {
+      "resumen.densidad.valor": 0.19661193324148182,
+      "resumen.acumulada.valor": 0.7310585786300049
+    },
+    "texto_verificado": [
+      "0,196612",
+      "0,731059"
+    ]
+  },
+  {
+    "clave": "lognormal",
+    "ruta": "/api/distribucion/calcular",
+    "entrada": {
+      "clave": "lognormal",
+      "parametros": {
+        "mu": 0.0,
+        "sigma": 0.5
+      },
+      "x": 1,
+      "q": 0.5,
+      "puntos": 41
+    },
+    "esperado": {
+      "resumen.densidad.valor": 0.7978845608028654,
+      "resumen.acumulada.valor": 0.5
+    },
+    "texto_verificado": [
+      "0,797885",
+      "0,5"
+    ]
+  },
+  {
+    "clave": "multinomial",
+    "ruta": "/api/distribucion/calcular",
+    "entrada": {
+      "clave": "multinomial",
+      "parametros": {
+        "n": 8,
+        "p": [
+          0.2,
+          0.3,
+          0.5
+        ]
+      },
+      "x": [
+        2,
+        2,
+        4
+      ],
+      "q": 0.5,
+      "puntos": 41
+    },
+    "esperado": {
+      "resumen.densidad.valor": 0.09450000000000004,
+      "resumen.acumulada.valor": [
+        0.7969177599999999,
+        0.5517738100000003,
+        0.63671875
+      ]
+    },
+    "texto_verificado": [
+      "0,0945",
+      "(0,796918; 0,551774; 0,636719)"
+    ]
+  },
+  {
+    "clave": "normal",
+    "ruta": "/api/distribucion/calcular",
+    "entrada": {
+      "clave": "normal",
+      "parametros": {
+        "mu": 0.0,
+        "sigma": 1.0
+      },
+      "x": 1,
+      "q": 0.5,
+      "puntos": 41
+    },
+    "esperado": {
+      "resumen.densidad.valor": 0.24197072451914337,
+      "resumen.acumulada.valor": 0.8413447460685429
+    },
+    "texto_verificado": [
+      "0,241971",
+      "0,841345"
+    ]
+  },
+  {
+    "clave": "normal_bivariada",
+    "ruta": "/api/distribucion/calcular",
+    "entrada": {
+      "clave": "normal_bivariada",
+      "parametros": {
+        "mu_x": 0.0,
+        "mu_y": 0.0,
+        "sigma_x": 1.0,
+        "sigma_y": 1.0,
+        "rho": 0.4
+      },
+      "x": [
+        0,
+        0
+      ],
+      "q": 0.5,
+      "puntos": 41
+    },
+    "esperado": {
+      "resumen.densidad.valor": 0.17365227951071419,
+      "resumen.acumulada.valor": 0.31549494021722735
+    },
+    "texto_verificado": [
+      "0,173652",
+      "0,315495"
+    ]
+  },
+  {
+    "clave": "normal_estandar",
+    "ruta": "/api/distribucion/calcular",
+    "entrada": {
+      "clave": "normal_estandar",
+      "parametros": {},
+      "x": 2,
+      "q": 0.5,
+      "puntos": 41
+    },
+    "esperado": {
+      "resumen.densidad.valor": 0.05399096651318805,
+      "resumen.acumulada.valor": 0.9772498680518208
+    },
+    "texto_verificado": [
+      "0,053991",
+      "0,97725"
+    ]
+  },
+  {
+    "clave": "pareto",
+    "ruta": "/api/distribucion/calcular",
+    "entrada": {
+      "clave": "pareto",
+      "parametros": {
+        "alpha": 3.0,
+        "xmin": 1.0
+      },
+      "x": 2,
+      "q": 0.5,
+      "puntos": 41
+    },
+    "esperado": {
+      "resumen.densidad.valor": 0.1875,
+      "resumen.acumulada.valor": 0.875
+    },
+    "texto_verificado": [
+      "0,1875",
+      "0,875"
+    ]
+  },
+  {
+    "clave": "poisson",
+    "ruta": "/api/distribucion/calcular",
+    "entrada": {
+      "clave": "poisson",
+      "parametros": {
+        "tasa": 3.0
+      },
+      "x": 5,
+      "q": 0.5,
+      "puntos": 41
+    },
+    "esperado": {
+      "resumen.densidad.valor": 0.10081881344492458,
+      "resumen.acumulada.valor": 0.9160820579686966
+    },
+    "texto_verificado": [
+      "0,100819",
+      "0,916082"
+    ]
+  },
+  {
+    "clave": "t_student",
+    "ruta": "/api/distribucion/calcular",
+    "entrada": {
+      "clave": "t_student",
+      "parametros": {
+        "gl": 5.0
+      },
+      "x": 1,
+      "q": 0.5,
+      "puntos": 41
+    },
+    "esperado": {
+      "resumen.densidad.valor": 0.21967979735098056,
+      "resumen.acumulada.valor": 0.8183912661754387
+    },
+    "texto_verificado": [
+      "0,21968",
+      "0,818391"
+    ]
+  },
+  {
+    "clave": "triangular",
+    "ruta": "/api/distribucion/calcular",
+    "entrada": {
+      "clave": "triangular",
+      "parametros": {
+        "a": 0.0,
+        "b": 4.0,
+        "c": 1.0
+      },
+      "x": 1,
+      "q": 0.5,
+      "puntos": 41
+    },
+    "esperado": {
+      "resumen.densidad.valor": 0.5,
+      "resumen.acumulada.valor": 0.25
+    },
+    "texto_verificado": [
+      "0,5",
+      "0,25"
+    ]
+  },
+  {
+    "clave": "uniforme",
+    "ruta": "/api/distribucion/calcular",
+    "entrada": {
+      "clave": "uniforme",
+      "parametros": {
+        "a": 1.0,
+        "b": 5.0
+      },
+      "x": 3,
+      "q": 0.5,
+      "puntos": 41
+    },
+    "esperado": {
+      "resumen.densidad.valor": 0.25,
+      "resumen.acumulada.valor": 0.5
+    },
+    "texto_verificado": [
+      "0,25",
+      "0,5"
+    ]
+  },
+  {
+    "clave": "uniforme_discreta",
+    "ruta": "/api/distribucion/calcular",
+    "entrada": {
+      "clave": "uniforme_discreta",
+      "parametros": {
+        "a": 1,
+        "b": 6
+      },
+      "x": 3,
+      "q": 0.5,
+      "puntos": 41
+    },
+    "esperado": {
+      "resumen.densidad.valor": 0.16666666666666666,
+      "resumen.acumulada.valor": 0.5
+    },
+    "texto_verificado": [
+      "0,166667",
+      "0,5"
+    ]
+  },
+  {
+    "clave": "weibull",
+    "ruta": "/api/distribucion/calcular",
+    "entrada": {
+      "clave": "weibull",
+      "parametros": {
+        "forma": 1.5,
+        "escala": 2.0
+      },
+      "x": 2,
+      "q": 0.5,
+      "puntos": 41
+    },
+    "esperado": {
+      "resumen.densidad.valor": 0.2759095808785818,
+      "resumen.acumulada.valor": 0.6321205588285577
+    },
+    "texto_verificado": [
+      "0,27591",
+      "0,632121"
+    ]
+  },
+  {
+    "clave": "prueba_t_una",
+    "ruta": "/api/inferencia",
+    "entrada": {
+      "prueba": "t_una",
+      "alfa": 0.05,
+      "alternativa": "two-sided",
+      "datos": [
+        4,
+        5,
+        6,
+        7,
+        8
+      ],
+      "mu0": 4
+    },
+    "esperado": {
+      "estadistico": 2.82842712474619,
+      "p_valor": 0.04742065558431962,
+      "gl": 4.0,
+      "rechaza": true
+    },
+    "texto_verificado": [
+      "2,828427",
+      "0,047421"
+    ]
+  },
+  {
+    "clave": "prueba_t_dos",
+    "ruta": "/api/inferencia",
+    "entrada": {
+      "prueba": "t_dos",
+      "alfa": 0.05,
+      "alternativa": "two-sided",
+      "datos": [
+        4,
+        5,
+        6,
+        7,
+        8
+      ],
+      "datos2": [
+        1,
+        2,
+        3,
+        4,
+        5
+      ]
+    },
+    "esperado": {
+      "estadistico": 3.0,
+      "p_valor": 0.017071681233782634,
+      "gl": 8.0,
+      "rechaza": true
+    },
+    "texto_verificado": [
+      "3",
+      "0,017072"
+    ]
+  },
+  {
+    "clave": "prueba_z_una",
+    "ruta": "/api/inferencia",
+    "entrada": {
+      "prueba": "z_una",
+      "alfa": 0.05,
+      "alternativa": "two-sided",
+      "datos": [
+        49,
+        51,
+        53,
+        55
+      ],
+      "mu0": 50,
+      "sigma": 2
+    },
+    "esperado": {
+      "estadistico": 2.0,
+      "p_valor": 0.04550026389635839,
+      "gl": null,
+      "rechaza": true
+    },
+    "texto_verificado": [
+      "2",
+      "0,0455"
+    ]
+  },
+  {
+    "clave": "prueba_z_dos",
+    "ruta": "/api/inferencia",
+    "entrada": {
+      "prueba": "z_dos",
+      "alfa": 0.05,
+      "alternativa": "two-sided",
+      "datos": [
+        10,
+        12,
+        14,
+        12
+      ],
+      "datos2": [
+        8,
+        10,
+        12,
+        10
+      ],
+      "sigma_a": 2,
+      "sigma_b": 2
+    },
+    "esperado": {
+      "estadistico": 1.414213562373095,
+      "p_valor": 0.15729920705028516,
+      "gl": null,
+      "rechaza": false
+    },
+    "texto_verificado": [
+      "1,414214",
+      "0,157299"
+    ]
+  },
+  {
+    "clave": "prueba_proporcion_una",
+    "ruta": "/api/inferencia",
+    "entrada": {
+      "prueba": "prop_una",
+      "alfa": 0.05,
+      "alternativa": "two-sided",
+      "exitos": 50,
+      "n": 100,
+      "p0": 0.3
+    },
+    "esperado": {
+      "estadistico": 4.364357804719848,
+      "p_valor": 1.2749674921097029e-05,
+      "gl": null,
+      "rechaza": true
+    },
+    "texto_verificado": [
+      "4,364358",
+      "0,000013"
+    ]
+  },
+  {
+    "clave": "prueba_proporcion_dos",
+    "ruta": "/api/inferencia",
+    "entrada": {
+      "prueba": "prop_dos",
+      "alfa": 0.05,
+      "alternativa": "two-sided",
+      "x1": 40,
+      "n1": 100,
+      "x2": 20,
+      "n2": 100
+    },
+    "esperado": {
+      "estadistico": 3.086066999241839,
+      "p_valor": 0.0020282311484520745,
+      "gl": null,
+      "rechaza": true
+    },
+    "texto_verificado": [
+      "3,086067",
+      "0,002028",
+      "20 puntos porcentuales"
+    ]
+  },
+  {
+    "clave": "chi_bondad",
+    "ruta": "/api/inferencia",
+    "entrada": {
+      "prueba": "chi_bondad",
+      "alfa": 0.05,
+      "alternativa": "two-sided",
+      "observadas": [
+        12,
+        15,
+        23
+      ],
+      "esperadas": [
+        15,
+        15,
+        20
+      ],
+      "parametros_estimados": 0
+    },
+    "esperado": {
+      "estadistico": 1.05,
+      "p_valor": 0.5915553643668152,
+      "gl": 2.0,
+      "rechaza": false
+    },
+    "texto_verificado": [
+      "1,05",
+      "0,591555"
+    ]
+  },
+  {
+    "clave": "chi_independencia",
+    "ruta": "/api/inferencia",
+    "entrada": {
+      "prueba": "chi_indep",
+      "alfa": 0.05,
+      "alternativa": "two-sided",
+      "tabla": [
+        [
+          18,
+          12
+        ],
+        [
+          10,
+          20
+        ]
+      ]
+    },
+    "esperado": {
+      "estadistico": 4.285714285714286,
+      "p_valor": 0.03843393023678176,
+      "gl": 1.0,
+      "rechaza": true
+    },
+    "texto_verificado": [
+      "4,285714",
+      "0,038434"
+    ]
+  },
+  {
+    "clave": "anova",
+    "ruta": "/api/inferencia",
+    "entrada": {
+      "prueba": "anova",
+      "alfa": 0.05,
+      "alternativa": "two-sided",
+      "grupos": [
+        [
+          2,
+          3,
+          4
+        ],
+        [
+          5,
+          6,
+          7
+        ],
+        [
+          9,
+          10,
+          11
+        ]
+      ]
+    },
+    "esperado": {
+      "estadistico": 37.0,
+      "p_valor": 0.00042187499999999994,
+      "gl": 2.0,
+      "rechaza": true,
+      "detalles.gl_residual": 6
+    },
+    "texto_verificado": [
+      "37",
+      "0,000422"
+    ]
+  },
+  {
+    "clave": "correlacion",
+    "ruta": "/api/inferencia",
+    "entrada": {
+      "prueba": "correlacion",
+      "alfa": 0.05,
+      "alternativa": "two-sided",
+      "x": [
+        1,
+        2,
+        3,
+        4,
+        5
+      ],
+      "y": [
+        2,
+        4,
+        5,
+        4,
+        5
+      ],
+      "metodo": "pearson"
+    },
+    "esperado": {
+      "estadistico": 0.7745966692414835,
+      "p_valor": 0.12402706265755462,
+      "gl": 3.0,
+      "rechaza": false
+    },
+    "texto_verificado": [
+      "0,774597",
+      "0,124027"
+    ]
+  },
+  {
+    "clave": "mann_whitney",
+    "ruta": "/api/inferencia",
+    "entrada": {
+      "prueba": "mann_whitney",
+      "alfa": 0.05,
+      "alternativa": "two-sided",
+      "datos": [
+        1,
+        2,
+        3
+      ],
+      "datos2": [
+        4,
+        5,
+        6
+      ]
+    },
+    "esperado": {
+      "estadistico": 0.0,
+      "p_valor": 0.1,
+      "gl": null,
+      "rechaza": false
+    },
+    "texto_verificado": [
+      "0",
+      "0,1"
+    ]
+  },
+  {
+    "clave": "wilcoxon",
+    "ruta": "/api/inferencia",
+    "entrada": {
+      "prueba": "wilcoxon",
+      "alfa": 0.05,
+      "alternativa": "two-sided",
+      "datos": [
+        1,
+        2,
+        3,
+        4
+      ],
+      "datos2": [
+        2,
+        4,
+        6,
+        8
+      ]
+    },
+    "esperado": {
+      "estadistico": 0.0,
+      "p_valor": 0.125,
+      "gl": null,
+      "rechaza": false
+    },
+    "texto_verificado": [
+      "0",
+      "0,125"
+    ]
+  },
+  {
+    "clave": "kruskal",
+    "ruta": "/api/inferencia",
+    "entrada": {
+      "prueba": "kruskal",
+      "alfa": 0.05,
+      "alternativa": "two-sided",
+      "grupos": [
+        [
+          1,
+          2,
+          3,
+          4,
+          5
+        ],
+        [
+          6,
+          7,
+          8,
+          9,
+          10
+        ],
+        [
+          11,
+          12,
+          13,
+          14,
+          15
+        ]
+      ]
+    },
+    "esperado": {
+      "estadistico": 12.5,
+      "p_valor": 0.0019304541362277095,
+      "gl": 2.0,
+      "rechaza": true
+    },
+    "texto_verificado": [
+      "12,5",
+      "0,00193"
+    ]
+  },
+  {
+    "clave": "descriptiva",
+    "ruta": "/api/descriptiva",
+    "entrada": {
+      "datos": [
+        1,
+        2,
+        2,
+        4,
+        5
+      ]
+    },
+    "esperado": {
+      "resumen.media": 2.8,
+      "resumen.mediana": 2.0,
+      "resumen.varianza": 2.7,
+      "resumen.desviacion": 1.6431676725154984
+    },
+    "texto_verificado": [
+      "2,8",
+      "2",
+      "2,7",
+      "1,643168"
+    ]
+  },
+  {
+    "clave": "bayes",
+    "ruta": "/api/probabilidad/bayes",
+    "entrada": {
+      "hipotesis": [
+        {
+          "nombre": "B1",
+          "prior": 0.4,
+          "likelihood": 0.5
+        },
+        {
+          "nombre": "B2",
+          "prior": 0.6,
+          "likelihood": 0.1
+        }
+      ]
+    },
+    "esperado": {
+      "total": 0.26,
+      "filas.0.posterior": 0.7692307692307693
+    },
+    "texto_verificado": [
+      "0,26",
+      "0,769231"
+    ]
+  },
+  {
+    "clave": "combinatoria",
+    "ruta": "/api/probabilidad/combinatoria",
+    "entrada": {
+      "tipo": "combinaciones",
+      "n": 10,
+      "k": 3
+    },
+    "esperado": {
+      "resultado": "120"
+    },
+    "texto_verificado": [
+      "120",
+      "720"
+    ]
+  },
+  {
+    "clave": "regresion",
+    "ruta": "/api/regresion",
+    "entrada": {
+      "x": [
+        [
+          1
+        ],
+        [
+          2
+        ],
+        [
+          3
+        ],
+        [
+          4
+        ]
+      ],
+      "y": [
+        3,
+        4,
+        7,
+        8
+      ],
+      "predecir": [
+        [
+          2.5
+        ]
+      ]
+    },
+    "esperado": {
+      "coeficientes.0.estimacion": 0.999999999999999,
+      "coeficientes.1.estimacion": 1.8,
+      "bondad.r2": 0.9529411764705883,
+      "predicciones.0.prediccion": 5.499999999999999
+    },
+    "texto_verificado": [
+      "1,8",
+      "1",
+      "5,5",
+      "0,952941"
+    ]
+  },
+  {
+    "clave": "ajuste_distribuciones",
+    "ruta": "/api/simulacion",
+    "entrada": {
+      "tipo": "ajuste",
+      "clave": "exponencial",
+      "datos": [
+        1,
+        2,
+        3,
+        4,
+        5
+      ],
+      "semilla": 42
+    },
+    "esperado": {
+      "parametros.scale": 3.0,
+      "aic": 22.986122886681095,
+      "ks": 0.28658288096740797
+    },
+    "texto_verificado": [
+      "3",
+      "22,986123"
+    ]
+  },
+  {
+    "clave": "qq_plot",
+    "ruta": "/api/simulacion",
+    "entrada": {
+      "tipo": "qq",
+      "clave": "normal",
+      "parametros": {
+        "mu": 0,
+        "sigma": 1
+      },
+      "datos": [
+        -1.2,
+        -0.5,
+        0,
+        0.5,
+        1.2
+      ]
+    },
+    "esperado": {
+      "teoricos": [
+        -1.2815515655446004,
+        -0.5244005127080409,
+        0.0,
+        0.5244005127080407,
+        1.2815515655446004
+      ],
+      "observados": [
+        -1.2,
+        -0.5,
+        0.0,
+        0.5,
+        1.2
+      ]
+    },
+    "texto_verificado": [
+      "−1,281552",
+      "−0,524401",
+      "1,281552"
+    ]
+  },
+  {
+    "clave": "montecarlo",
+    "ruta": "/api/simulacion",
+    "entrada": {
+      "tipo": "pi",
+      "n": 10000,
+      "semilla": 42,
+      "confianza": 0.95
+    },
+    "esperado": {
+      "estimacion.valor": 3.16,
+      "estimacion.error_estandar": 0.016293144161108546,
+      "estimacion.intervalo": [
+        3.1280660242493084,
+        3.191933975750692
+      ]
+    },
+    "texto_verificado": [
+      "10 000",
+      "42",
+      "3,16",
+      "0,016293",
+      "[3,128066; 3,191934]"
+    ]
+  },
+  {
+    "clave": "muestreo_finito",
+    "ruta": "/api/muestreo/tamano",
+    "entrada": {
+      "tipo": "proporcion",
+      "confianza": 0.95,
+      "error": 0.05,
+      "p": 0.5,
+      "N": 1000
+    },
+    "esperado": {
+      "n": 278
+    },
+    "texto_verificado": [
+      "278"
+    ]
+  },
+  {
+    "clave": "muestreo_infinito",
+    "ruta": "/api/muestreo/tamano",
+    "entrada": {
+      "tipo": "proporcion",
+      "confianza": 0.95,
+      "error": 0.05,
+      "p": 0.5
+    },
+    "esperado": {
+      "n": 385
+    },
+    "texto_verificado": [
+      "385"
+    ]
+  },
+  {
+    "clave": "tamano_proporcion",
+    "ruta": "/api/muestreo/tamano",
+    "entrada": {
+      "tipo": "proporcion",
+      "confianza": 0.95,
+      "error": 0.05,
+      "p": 0.5
+    },
+    "esperado": {
+      "n": 385
+    },
+    "texto_verificado": [
+      "385",
+      "278"
+    ]
+  },
+  {
+    "clave": "tamano_media",
+    "ruta": "/api/muestreo/tamano",
+    "entrada": {
+      "tipo": "media",
+      "confianza": 0.95,
+      "error": 2,
+      "sigma": 12
+    },
+    "esperado": {
+      "n": 139
+    },
+    "texto_verificado": [
+      "139",
+      "109"
+    ]
+  },
+  {
+    "clave": "tamano_diferencia",
+    "ruta": "/api/muestreo/tamano",
+    "entrada": {
+      "tipo": "diferencia_medias",
+      "confianza": 0.95,
+      "error": 2,
+      "sigma1": 3,
+      "sigma2": 4
+    },
+    "esperado": {
+      "n": 25
+    },
+    "texto_verificado": [
+      "25",
+      "50"
+    ]
+  },
+  {
+    "clave": "muestreo_estratificado",
+    "ruta": "/api/muestreo",
+    "entrada": {
+      "metodo": "proporcional",
+      "n": 30,
+      "auto": false,
+      "semilla": 42,
+      "estratos": [
+        {
+          "nombre": "A",
+          "N": 100,
+          "sigma": 8,
+          "costo": 1
+        },
+        {
+          "nombre": "B",
+          "N": 200,
+          "sigma": 4,
+          "costo": 1
+        }
+      ]
+    },
+    "esperado": {
+      "seleccion": [
+        10,
+        20
+      ]
+    },
+    "texto_verificado": [
+      "10",
+      "20"
+    ]
+  },
+  {
+    "clave": "muestreo_neyman",
+    "ruta": "/api/muestreo",
+    "entrada": {
+      "metodo": "neyman",
+      "n": 40,
+      "auto": false,
+      "semilla": 42,
+      "estratos": [
+        {
+          "nombre": "A",
+          "N": 100,
+          "sigma": 8,
+          "costo": 1
+        },
+        {
+          "nombre": "B",
+          "N": 200,
+          "sigma": 4,
+          "costo": 1
+        }
+      ]
+    },
+    "esperado": {
+      "seleccion": [
+        20,
+        20
+      ]
+    },
+    "texto_verificado": [
+      "20",
+      "20"
+    ]
+  },
+  {
+    "clave": "muestreo_optimo",
+    "ruta": "/api/muestreo",
+    "entrada": {
+      "metodo": "optimo",
+      "n": 60,
+      "auto": false,
+      "semilla": 42,
+      "estratos": [
+        {
+          "nombre": "A",
+          "N": 100,
+          "sigma": 8,
+          "costo": 1
+        },
+        {
+          "nombre": "B",
+          "N": 200,
+          "sigma": 4,
+          "costo": 4
+        }
+      ]
+    },
+    "esperado": {
+      "seleccion": [
+        40,
+        20
+      ]
+    },
+    "texto_verificado": [
+      "40",
+      "20"
+    ]
+  },
+  {
+    "clave": "muestreo_sistematico",
+    "ruta": "/api/muestreo",
+    "entrada": {
+      "metodo": "sistematico",
+      "N": 40,
+      "n": 10,
+      "semilla": 0,
+      "auto": false
+    },
+    "esperado": {
+      "total_muestra": 10
+    },
+    "texto_verificado": [
+      "3, 7, 11, …, 39",
+      "10"
+    ]
+  },
+  {
+    "clave": "muestreo_conglomerados",
+    "ruta": "/api/muestreo",
+    "entrada": {
+      "metodo": "conglomerados",
+      "n": 2,
+      "semilla": 42,
+      "estratos": [
+        {
+          "nombre": "Escuela 1",
+          "N": 100
+        },
+        {
+          "nombre": "Escuela 2",
+          "N": 100
+        },
+        {
+          "nombre": "Escuela 3",
+          "N": 100
+        },
+        {
+          "nombre": "Escuela 4",
+          "N": 100
+        },
+        {
+          "nombre": "Escuela 5",
+          "N": 100
+        }
+      ],
+      "auto": false
+    },
+    "esperado": {
+      "total_muestra": 200
+    },
+    "texto_verificado": [
+      "200"
+    ]
+  },
+  {
+    "clave": "intervalos_confianza",
+    "operacion": "intervalo_media",
+    "entrada": {
+      "media": 20,
+      "s": 4,
+      "n": 16,
+      "confianza": 0.95
+    },
+    "esperado": {
+      "inferior": 17.868550454440676,
+      "superior": 22.131449545559324
+    },
+    "texto_verificado": [
+      "[17,87; 22,13]"
+    ]
+  }
+]

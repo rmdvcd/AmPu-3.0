@@ -1,3 +1,4 @@
+import { VISTAS } from "../data.js";
 import {
   el,
   panel,
@@ -29,9 +30,9 @@ import { crearCamposParametros, resumenParametros } from "../params.js";
 
 const HERRAMIENTAS = [
   { clave: "pi", nombre: "Estimar π", descripcion: "Monte Carlo geométrico con convergencia e intervalo.", icono: "pi" },
-  { clave: "integral", nombre: "Integrar", descripcion: "Integrales definidas por promedio de valores aleatorios.", icono: "sigma" },
+  { clave: "integral", nombre: "Integrar", descripcion: "Integrales definidas por promedio de valores aleatorios.", icono: "integral" },
   { clave: "muestra", nombre: "Generar muestra", descripcion: "Simula cualquiera de las 26 distribuciones del motor.", icono: "distribuciones" },
-  { clave: "ajuste", nombre: "Ajustar distribución", descripcion: "Máxima verosimilitud, AIC y contraste KS.", icono: "objetivo" },
+  { clave: "ajuste", nombre: "Ajustar distribución", descripcion: "Máxima verosimilitud, AIC y KS exploratorio.", icono: "objetivo" },
   { clave: "qq", nombre: "QQ-plot", descripcion: "Compara cuantiles empíricos y teóricos.", icono: "dispersion" },
 ];
 
@@ -99,7 +100,7 @@ function mostrarErrorMotor(resultadoHost, error, titulo, campos = {}) {
 function panelEspera(titulo, texto) {
   return panel({
     titulo: "Sin resultados",
-    icono: "chispa",
+    icono: "info",
     contenido: estadoVacio({ icono: "simulacion", titulo, texto }),
   });
 }
@@ -162,7 +163,7 @@ function configConvergencia(convergencia, referencia, etiqueta) {
 /* ================================================================== */
 
 function herramientaPi(pendiente) {
-  const campoN = crearCampoNumerico("n", "Simulaciones", pendiente?.n || 10000, { min: 100, max: 200000, ayuda: "Más simulaciones reducen el error, con rendimiento √n." });
+  const campoN = crearCampoNumerico("n", "Simulaciones", pendiente?.n || 10000, { min: 100, max: 200000, ayuda: "El error disminuye aproximadamente como 1/√n." });
   const campoSemilla = crearCampoNumerico("semilla", "Semilla", 42, { min: 0, max: 999999999 });
   const campoConfianza = campo({ etiqueta: "Confianza del intervalo", tipo: "select", valor: "0.95", opciones: [["0.90", "90 %"], ["0.95", "95 %"], ["0.99", "99 %"]] });
   const resultadoHost = el("div", { "aria-live": "polite" });
@@ -546,7 +547,6 @@ function herramientaAjuste(pendiente, metaDatos) {
     requerido: true,
     ayuda: "Al menos 5 observaciones. Los parámetros se estiman por máxima verosimilitud.",
   });
-  const campoSemilla = crearCampoNumerico("semilla", "Semilla de arranque", 42, { min: 0, max: 999999999 });
   const resultadoHost = el("div", { "aria-live": "polite" });
   const botonCalcular = boton("Ajustar", { icono: "reproducir", dataset: { accionPrimaria: "true" } });
 
@@ -555,11 +555,11 @@ function herramientaAjuste(pendiente, metaDatos) {
     if (!serie) return;
     botonCalcular.cargando(true);
     try {
-      const datos = await api.post("/api/simulacion", { tipo: "ajuste", clave: campoModelo.valor(), datos: campoDatos.texto(), semilla: campoSemilla.valor() });
+      const datos = await api.post("/api/simulacion", { tipo: "ajuste", clave: campoModelo.valor(), datos: campoDatos.texto() });
       render(datos);
       registrarHistorial({ titulo: `Ajuste · ${datos.clave}`, detalle: `AIC ${fmtNum(datos.aic, { decimales: 2 })} · KS p = ${fmtP(datos.p_ks)}`, ruta: "simulacion/ajuste", tipo: "simulacion", icono: "objetivo" });
     } catch (error) {
-      if (!esCancelacion(error)) mostrarErrorMotor(resultadoHost, error, "No se pudo ajustar", { datos: campoDatos, semilla: campoSemilla });
+      if (!esCancelacion(error)) mostrarErrorMotor(resultadoHost, error, "No se pudo ajustar", { datos: campoDatos });
     } finally {
       botonCalcular.cargando(false);
     }
@@ -589,7 +589,7 @@ function herramientaAjuste(pendiente, metaDatos) {
         { class: "pila" },
         panel({
           titulo: `Ajuste ${datos.clave}`,
-          subtitulo: `${datos.n} observaciones · máximo verosimilitud`,
+          subtitulo: `${datos.n} observaciones · máxima verosimilitud`,
           icono: "objetivo",
           acciones: [
             ...botonesExportar(["pdf", "xlsx", "png", "csv"], (formato, nodo) =>
@@ -612,7 +612,7 @@ function herramientaAjuste(pendiente, metaDatos) {
               { class: "rejilla rejilla--kpi" },
               kpi({ etiqueta: "AIC", valor: fmtNum(datos.aic, { decimales: 2 }), detalle: "menor es mejor", tono: "marca" }),
               kpi({ etiqueta: "KS", valor: fmtNum(datos.ks, { decimales: 5 }), detalle: "distancia empírica" }),
-              kpi({ etiqueta: "p-valor KS", valor: fmtP(datos.p_ks), detalle: "exploratorio", tono: datos.p_ks > 0.05 ? "ok" : "aviso" }),
+              kpi({ etiqueta: "p-valor KS", valor: fmtP(datos.p_ks), detalle: "exploratorio" }),
               kpi({ etiqueta: "n", valor: fmtNum(datos.n, { entero: true }), detalle: "observaciones" })
             ),
             alerta({ tipo: "aviso", texto: datos.nota })
@@ -662,7 +662,7 @@ function herramientaAjuste(pendiente, metaDatos) {
       contenido: el(
         "div",
         { class: "pila" },
-        el("div", { class: "rejilla rejilla--2" }, campoModelo.envoltura, campoSemilla.envoltura),
+        campoModelo.envoltura,
         campoDatos.envoltura,
         el("div", { class: "fila" }, botonCalcular)
       ),
@@ -764,7 +764,7 @@ function herramientaQQ(pendiente, metaDatos) {
             "div",
             { class: "pila" },
             el("div", { class: "rejilla rejilla--kpi" }, kpi({ etiqueta: "n", valor: fmtNum(datos.n, { entero: true }), detalle: "observaciones" }), kpi({ etiqueta: "Parámetros", valor: String(Object.keys(parametros.valores()).length), detalle: resumenParametros(modelo, parametros.valores()) })),
-            alerta({ tipo: "info", texto: "Si los puntos se separan de la recta en los extremos, el modelo subestima o sobreestima las colas." })
+            alerta({ tipo: "info", texto: "Una separación en los extremos puede indicar diferencias entre las colas del modelo y las de los datos." })
           ),
         }),
         panel({ titulo: "Cuantiles", icono: "grafico", contenido: host })
@@ -773,7 +773,7 @@ function herramientaQQ(pendiente, metaDatos) {
   }
 
   botonCalcular.addEventListener("click", ejecutar);
-  resultadoHost.append(panelEspera("Diagnostica el ajuste", "El QQ-plot enfrenta los cuantiles observados con los del modelo. Una recta indica buen acuerdo."));
+  resultadoHost.append(panelEspera("Diagnostica el ajuste", "El QQ-plot enfrenta los cuantiles observados con los del modelo. Puntos cercanos a una recta sugieren concordancia; no la demuestran."));
   return {
     nodo: el(
       "div",
@@ -870,7 +870,7 @@ export async function montar(host, parametro) {
         el(
           "div",
           {},
-          el("span", { class: "ceja" }, "Explorar · Simulación"),
+          el("span", { class: "ceja" }, "Diseñar · Simulación"),
           el(
             "div",
             { class: "vista__titulo" },
@@ -880,7 +880,7 @@ export async function montar(host, parametro) {
           el(
             "p",
             { class: "vista__subtitulo" },
-            "Estima, integra, genera muestras, ajusta modelos y diagnostica con QQ-plots. Todas las simulaciones son reproducibles mediante semilla."
+            VISTAS.simulacion.subtitulo
           )
         ),
         el("div", { class: "vista__acciones" }, boton("Leer Monte Carlo", { variante: "secundario", icono: "teoria", onClick: () => navegar("teoria/montecarlo") }))

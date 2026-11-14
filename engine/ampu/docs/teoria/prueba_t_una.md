@@ -12,45 +12,28 @@ Contrasta una media sin conocer la desviación poblacional, con varianza muestra
 | `n` | Muestra independiente de tamaño ≥2 |
 | `s` | Desviación muestral positiva |
 
-
-## Función, estadístico o regla de selección
+## Fórmula y procedimiento
 
 $$
 T=\frac{\bar X-\mu_0}{s/\sqrt n}\overset{H_0}{\sim}t_{n-1}
 $$
 
-## Función de distribución acumulada (CDF)
+## Distribución de referencia
 
-CDF de referencia o del estimador bajo las hipótesis indicadas.
-
-$$
-F_T(t)=\int_{-\infty}^{t}\frac{\Gamma(n/2)}{\sqrt{(n-1)\pi}\,\Gamma((n-1)/2)}\left(1+\frac{u^2}{n-1}\right)^{-n/2}\mathrm{d}u
-$$
-
-## Media, varianza y desviación estándar
-
-$$
-\operatorname{E}[T]=0\ (n>2),\quad\operatorname{Var}(T)=\frac{n-1}{n-3}\ (n>3)
-$$
-
-Si no se explicita $\sigma=\sqrt{\operatorname{Var}}$, se obtiene como raíz cuadrada de la varianza; cuando no existe, no debe reportarse un valor numérico.
+Bajo $H_0$, observaciones independientes de una población normal producen un estadístico con distribución $t_{n-1}$. En la prueba bilateral, el p-valor es $2P(t_{n-1}\ge |t_{\mathrm{obs}}|)$. Con muestras grandes, la aproximación puede ser útil sin normalidad exacta.
 
 ## Propiedades y casos especiales
 
 Con muestras pequeñas conviene explorar normalidad; varianza cero no permite prueba t.
 
-![Esquema de Prueba t · una media](../imagenes/inferencia.png)
-
-*Figura 1. Representación orientativa del procedimiento o de su distribución de referencia.*
-
 ## Ejemplo resuelto, paso a paso
 
-1. Para $n=10$, $\bar x=5,8$, $s=1$, $\mu_0=5$: $t=0,8/(1/\sqrt{10})=2,530$.
-2. Use 9 grados de libertad y cola bilateral $p\approx0,032$.
-3. Como $p<0,05$, rechace H₀ sin afirmar causalidad.
+1. **Datos.** Usa `4 5 6 7 8` y contrasta $H_0:\mu=4$ frente a una alternativa bilateral, con $\alpha=0{,}05$.
+2. **Estadístico.** $n=5$, $\bar x=6$ y $s=\sqrt{2{,}5}$. El error estándar es $s/\sqrt5\approx0{,}707107$; por tanto, $t\approx$ **2,828427**.
+3. **Probabilidad de referencia.** Con 4 grados de libertad, el p-valor bilateral es **0,047421**.
+4. **Conclusión.** Como $p<0{,}05$, rechaza $H_0$ bajo los supuestos de la prueba. Con una muestra tan pequeña, la normalidad de la población es especialmente importante.
 
 ## Referencias
 
-- Cochran, W. G. (1977). *Sampling Techniques* (3.ª ed.). Wiley.
 - Casella, G., & Berger, R. L. (2002). *Statistical Inference* (2.ª ed.). Duxbury.
 - Virtanen, P., et al. (2020). SciPy 1.0: Fundamental algorithms for scientific computing in Python. *Nature Methods, 17*, 261–272. https://doi.org/10.1038/s41592-019-0686-2

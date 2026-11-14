@@ -1,3 +1,4 @@
+import { VISTAS } from "../data.js";
 import {
   el,
   panel,
@@ -26,6 +27,7 @@ import {
   comportamientoScroll,
 } from "../ui.js";
 import { icono } from "../icons.js";
+import { contenidoLectura } from "../lectura.js";
 import { dibujar } from "../chart.js";
 import { crearCamposParametros, resumenParametros } from "../params.js";
 import {
@@ -164,7 +166,7 @@ export async function montar(host, parametro) {
     },
   });
 
-  const lista = el("div", { class: "lista-modelos", role: "list" });
+  const lista = el("div", { class: "lista-modelos", role: "group", "aria-label": "Modelos de distribución" });
   const panelModelos = panel({
     titulo: "Catálogo",
     subtitulo: `${distribuciones.length} modelos disponibles`,
@@ -199,17 +201,8 @@ export async function montar(host, parametro) {
           el(
             "p",
             { class: "vista__subtitulo" },
-            "Elige un modelo, ajusta sus parámetros y lee a la vez la masa o densidad, la acumulada, la cola y los cuantiles. Todo se recalcula al cambiar un dato."
+            VISTAS.distribuciones.subtitulo
           )
-        ),
-        el(
-          "div",
-          { class: "vista__acciones" },
-          boton("Ver teoría", {
-            variante: "secundario",
-            icono: "teoria",
-            onClick: () => modelo.teoria && navegar(`teoria/${modelo.teoria}`),
-          })
         )
       ),
       el("div", { class: "dividido" }, panelModelos, el("div", { class: "pila" }, fichaHost, formHost, resultadoHost))
@@ -247,7 +240,6 @@ export async function montar(host, parametro) {
             {
               class: "modelo-item",
               type: "button",
-              role: "listitem",
               "aria-pressed": String(d.clave === clave),
               onClick: () => seleccionar(d.clave),
               title: `${d.nombre} · ${d.clave}`,
@@ -282,8 +274,8 @@ export async function montar(host, parametro) {
       detalles.append(
         pliegue({
           titulo: "Ejemplo resuelto",
-          icono: "documento",
-          contenido: textoMatematico(modelo.ejemplo),
+          icono: "ejemplo",
+          contenido: modelo.ejemplo_html ? contenidoLectura(modelo.ejemplo_html, { compacto: true }) : textoMatematico(modelo.ejemplo),
         })
       );
     }
@@ -292,7 +284,7 @@ export async function montar(host, parametro) {
         pliegue({
           titulo: "Propiedades y casos especiales",
           icono: "info",
-          contenido: textoMatematico(modelo.propiedades),
+          contenido: modelo.propiedades_html ? contenidoLectura(modelo.propiedades_html, { compacto: true }) : textoMatematico(modelo.propiedades),
         })
       );
     }
@@ -471,7 +463,7 @@ export async function montar(host, parametro) {
     });
     const botonReset = boton("Restablecer", {
       variante: "fantasma",
-      icono: "actualizar",
+      icono: "restablecer",
       onClick: () => {
         guardarEstadoModelo(modelo.clave, {});
         estado = crearEstado(modelo);
@@ -909,7 +901,7 @@ export async function montar(host, parametro) {
     );
 
     const accionesExportar = [
-      boton("PNG", { variante: "secundario", pequeno: true, icono: "descargar", onClick: (e) => exportar("png", e.currentTarget) }),
+      boton("PNG", { variante: "secundario", pequeno: true, icono: "imagen", onClick: (e) => exportar("png", e.currentTarget) }),
       boton("PDF", { variante: "secundario", pequeno: true, icono: "documento", onClick: (e) => exportar("pdf", e.currentTarget) }),
       boton("Excel", { variante: "secundario", pequeno: true, icono: "tabla", onClick: (e) => exportar("xlsx", e.currentTarget) }),
     ];
@@ -1012,7 +1004,7 @@ export async function montar(host, parametro) {
     resultadoHost.replaceChildren(
       panel({
         titulo: "Listo para calcular",
-        icono: "chispa",
+        icono: "info",
         contenido: estadoVacio({
           icono: "distribuciones",
           titulo: "Configura el modelo y pulsa Calcular",

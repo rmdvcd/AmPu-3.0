@@ -1,3 +1,4 @@
+import { VISTAS } from "../data.js";
 import {
   el,
   panel,
@@ -309,22 +310,18 @@ export async function montar(host) {
   function estadoInicial() {
     return panel({
       titulo: "Sin modelo todavía",
-      icono: "chispa",
+      icono: "info",
       contenido: estadoVacio({
         icono: "regresion",
         titulo: "Ajusta un modelo lineal",
-        texto: "Con una sola línea de X se ajusta una regresión simple; con varias columnas, una regresión múltiple. Añade filas en Predecir para obtener intervalos de predicción.",
-        acciones: [
-          boton("Probar ejemplo simple", { variante: "secundario", icono: "chispa", onClick: () => cargarEjemplo("simple") }),
-          boton("Probar ejemplo múltiple", { variante: "fantasma", icono: "chispa", onClick: () => cargarEjemplo("multiple") }),
-        ],
+        texto: "Una columna de X ajusta un modelo simple; varias columnas, uno múltiple.",
       }),
     });
   }
 
   const formulario = panel({
     titulo: "Datos y configuración",
-    subtitulo: "El modelo se ajusta por mínimos cuadrados ordinarios. La interfaz valida dimensiones antes de enviar nada al motor.",
+    subtitulo: "Una fila por observación; conserva el mismo orden en X e Y.",
     icono: "regresion",
     acciones: [diagnostico],
     contenido: el(
@@ -339,8 +336,8 @@ export async function montar(host) {
           "div",
           { class: "fila" },
           botonCalcular,
-          boton("Ejemplo simple", { variante: "secundario", icono: "chispa", onClick: () => cargarEjemplo("simple") }),
-          boton("Ejemplo múltiple", { variante: "fantasma", icono: "chispa", onClick: () => cargarEjemplo("multiple") })
+          boton("Ejemplo simple", { variante: "secundario", icono: "ejemplo", onClick: () => cargarEjemplo("simple") }),
+          boton("Ejemplo múltiple", { variante: "fantasma", icono: "ejemplo", onClick: () => cargarEjemplo("multiple") })
         ),
         estado
       ),
@@ -656,8 +653,7 @@ export async function montar(host) {
           "div",
           { class: "pila pila--sm" },
           el("p", { class: "texto-articulo" }, resultado.nota),
-          el("p", { class: "texto-articulo" }, "Comprueba linealidad, independencia, homocedasticidad y normalidad aproximada de los residuos. Un R² alto no corrige un diseño sesgado ni un modelo mal especificado."),
-          boton("Leer regresión", { variante: "secundario", pequeno: true, icono: "teoria", onClick: () => navegar("teoria/regresion_lineal") })
+          el("p", { class: "texto-articulo" }, "Comprueba linealidad, independencia, homocedasticidad y normalidad aproximada de los residuos. Un R² alto no corrige un diseño sesgado ni un modelo mal especificado.")
         ),
       })
     );
@@ -738,7 +734,7 @@ export async function montar(host) {
         el(
           "div",
           {},
-          el("span", { class: "ceja" }, "Diseñar · Regresión"),
+          el("span", { class: "ceja" }, "Inferir · Regresión"),
           el(
             "div",
             { class: "vista__titulo" },
@@ -748,13 +744,13 @@ export async function montar(host) {
           el(
             "p",
             { class: "vista__subtitulo" },
-            "Ajusta modelos simples o múltiples, revisa coeficientes e intervalos, examina residuos y predice con contexto. Todo con validación de dimensiones antes de calcular."
+            VISTAS.regresion.subtitulo
           )
         ),
         el(
           "div",
           { class: "vista__acciones" },
-          boton("Guía de regresión", { variante: "secundario", icono: "teoria", onClick: () => navegar("teoria/regresion_lineal") })
+          boton("Guía de regresión", { variante: "secundario", icono: "teoria", onClick: () => navegar("teoria/regresion") })
         )
       ),
       el("div", { class: "pila" }, formulario, resultadoHost)

@@ -1,27 +1,22 @@
-import { el, boton, panel, badge, latex, estadoVacio, fechaRelativa } from "../ui.js";
+import { el, boton, panel, badge, estadoVacio, fechaRelativa, confirmar, toast } from "../ui.js";
 import { icono } from "../icons.js";
-import { cargarMeta, historial, limpiarHistorial, meta, navegar } from "../store.js";
+import { cargarMeta, historial, limpiarHistorial, meta } from "../store.js";
 
 const HERRAMIENTAS = [
-  { ruta: "distribuciones", titulo: "Explorar una distribución", texto: "26 modelos, curvas y cuantiles", icono: "distribuciones" },
+  { ruta: "distribuciones", titulo: "Explorar una distribución", texto: "Modelos, curvas y cuantiles", icono: "distribuciones" },
   { ruta: "descriptiva", titulo: "Describir mis datos", texto: "Resumen, histograma y atípicos", icono: "descriptiva" },
-  { ruta: "inferencia", titulo: "Contrastar una hipótesis", texto: "13 pruebas con interpretación", icono: "inferencia" },
+  { ruta: "probabilidad", titulo: "Calcular probabilidades", texto: "Combinatoria, condicional y Bayes", icono: "probabilidad" },
+  { ruta: "inferencia", titulo: "Contrastar una hipótesis", texto: "Pruebas e interpretación", icono: "inferencia" },
   { ruta: "regresion", titulo: "Ajustar una regresión", texto: "Coeficientes, R² y residuos", icono: "regresion" },
   { ruta: "muestreo", titulo: "Diseñar una muestra", texto: "Tamaño, estratos y semilla", icono: "muestreo" },
-  { ruta: "simulacion", titulo: "Simular con Monte Carlo", texto: "π, integrales y ajustes", icono: "simulacion" },
+  { ruta: "simulacion", titulo: "Simular y ajustar modelos", texto: "Monte Carlo, muestras y QQ-plots", icono: "simulacion" },
+  { ruta: "teoria", titulo: "Consultar la teoría", texto: "Definiciones, fórmulas y ejemplos", icono: "teoria" },
 ];
 
-const RUTAS = [
-  { ceja: "Si empiezas hoy", titulo: "Aprende el vocabulario", texto: "Lee la teoría de una distribución y pruébala en el laboratorio con los parámetros por defecto.", ruta: "teoria/normal", accion: "Leer la lección" },
-  { ceja: "Si ya tienes datos", titulo: "Empieza por describirlos", texto: "Pega tu columna de números y observa centro, dispersión, forma y valores atípicos antes de inferir.", ruta: "descriptiva", accion: "Analizar datos" },
-  { ceja: "Si vas a decidir", titulo: "Contrasta con contexto", texto: "Una prueba devuelve más que un p-valor: revisa supuestos, intervalo y tamaño del efecto.", ruta: "inferencia", accion: "Ver pruebas" },
-  { ceja: "Si diseñas un estudio", titulo: "Calcula antes de recoger", texto: "Estima el tamaño muestral y documenta el diseño con una semilla reproducible.", ruta: "muestreo", accion: "Diseñar muestra" },
-];
+const DESTACADAS = ["normal", "binomial", "poisson", "t_student", "exponencial"];
 
 function tarjetaHerramienta({ ruta, titulo, texto, icono: nombreIcono }) {
-  return el(
-    "a",
-    { class: "tarjeta-herramienta", href: `#/${ruta}` },
+  return el("a", { class: "tarjeta-herramienta", href: `#/${ruta}` },
     el("span", { class: "tarjeta-herramienta__icono" }, icono(nombreIcono, { tamano: 17 })),
     el("span", { class: "tarjeta-herramienta__titulo" }, titulo),
     el("span", { class: "tarjeta-herramienta__texto" }, texto)
@@ -31,45 +26,28 @@ function tarjetaHerramienta({ ruta, titulo, texto, icono: nombreIcono }) {
 function actividad(entradas) {
   if (!entradas.length) {
     return estadoVacio({
-      icono: "historial",
-      titulo: "Tu actividad aparecerá aquí",
-      texto: "Cuando calcules una distribución, analices datos o ejecutes una prueba, podrás volver a ese resultado con un clic.",
-      acciones: [boton("Empezar por distribuciones", { icono: "distribuciones", onClick: () => navegar("distribuciones") })],
+      icono: "historial", titulo: "Sin actividad reciente", texto: "Tus cálculos recientes aparecerán aquí.",
     });
   }
-  const lista = el("div", { class: "actividad" });
-  for (const entrada of entradas.slice(0, 7)) {
-    lista.append(
-      el(
-        "a",
-        { class: "actividad__item", href: `#/${entrada.ruta}` },
-        el("span", { class: "actividad__icono" }, icono(entrada.icono || "historial", { tamano: 14 })),
-        el(
-          "span",
-          { class: "actividad__cuerpo" },
-          el("span", { class: "actividad__titulo" }, entrada.titulo),
-          el("span", { class: "actividad__meta" }, entrada.detalle || "Cálculo guardado")
-        ),
-        el("span", { class: "actividad__hora" }, fechaRelativa(entrada.fecha))
-      )
-    );
-  }
-  return lista;
+  return el("div", { class: "actividad" }, entradas.slice(0, 7).map((entrada) =>
+    el("a", { class: "actividad__item", href: `#/${entrada.ruta}` },
+      el("span", { class: "actividad__icono" }, icono(entrada.icono || "historial", { tamano: 14 })),
+      el("span", { class: "actividad__cuerpo" },
+        el("span", { class: "actividad__titulo" }, entrada.titulo),
+        el("span", { class: "actividad__meta" }, entrada.detalle || "Cálculo reciente")
+      ),
+      el("span", { class: "actividad__hora" }, fechaRelativa(entrada.fecha))
+    )
+  ));
 }
 
 function destacada(modelo) {
-  const formula = el("div", { class: "distribucion-mini__formula" });
-  return el(
-    "a",
-    { class: "distribucion-mini", href: `#/distribuciones/${modelo.clave}` },
-    el(
-      "div",
-      { class: "distribucion-mini__cabecera" },
-      el("strong", {}, modelo.nombre),
-      badge(modelo.discreta ? "discreta" : "continua", modelo.discreta ? "discreta" : "continua")
-    ),
-    formula,
-    el("span", { class: "distribucion-mini__flecha" }, "Abrir ", icono("flecha-derecha", { tamano: 13 }))
+  return el("a", { class: "distribucion-mini", href: `#/distribuciones/${modelo.clave}` },
+    el("strong", {}, modelo.nombre),
+    el("span", { class: "distribucion-mini__meta" },
+      badge(modelo.discreta ? "discreta" : "continua", modelo.discreta ? "discreta" : "continua"),
+      icono("flecha-derecha", { tamano: 14 })
+    )
   );
 }
 
@@ -82,129 +60,45 @@ export async function montar(host) {
       datos = null;
     }
   }
-
-  const nDist = datos?.distribuciones?.length ?? 26;
-  const nTeoria = datos?.teoria?.length ?? 57;
-  const nPruebas = datos?.pruebas?.length ?? 13;
-
-  const hero = el(
-    "section",
-    { class: "hero" },
-    el("span", { class: "ceja" }, icono("candado", { tamano: 13 }), "Laboratorio local · sin conexión"),
-    el("h1", {}, "Piensa con datos, ", el("em", {}, "no contra la interfaz.")),
-    el(
-      "p",
-      { class: "hero__texto" },
-      "AmPu reúne distribuciones, estadística descriptiva, inferencia, regresión, muestreo y simulación en un solo lugar. Cada resultado incluye su fórmula, su interpretación y los datos para verificarlo."
-    ),
-    el(
-      "div",
-      { class: "hero__acciones" },
-      boton("Abrir el laboratorio", { icono: "distribuciones", onClick: () => navegar("distribuciones") }),
-      boton("Analizar mis datos", { icono: "descriptiva", variante: "secundario", onClick: () => navegar("descriptiva") }),
-      boton("Explorar la teoría", { icono: "teoria", variante: "fantasma", onClick: () => navegar("teoria") })
-    ),
-    el(
-      "div",
-      { class: "hero__datos" },
-      el("div", { class: "hero__dato" }, el("strong", {}, String(nDist)), el("span", {}, "distribuciones")),
-      el("div", { class: "hero__dato" }, el("strong", {}, String(nTeoria)), el("span", {}, "lecciones con fórmulas")),
-      el("div", { class: "hero__dato" }, el("strong", {}, String(nPruebas)), el("span", {}, "pruebas de hipótesis")),
-      el("div", { class: "hero__dato" }, el("strong", {}, "100 %"), el("span", {}, "cálculo en tu equipo"))
+  const modelos = DESTACADAS.map((clave) => datos?.distribuciones?.find((d) => d.clave === clave)).filter(Boolean);
+  const entradas = historial();
+  const hero = el("section", { class: "hero" },
+    el("span", { class: "ceja" }, icono("candado", { tamano: 13 }), "AmPu · Laboratorio local"),
+    el("h1", {}, "Probabilidad y estadística, ", el("em", {}, "en tu equipo.")),
+    el("p", { class: "hero__texto" }, "Elige una herramienta para calcular, interpretar y contrastar resultados."),
+    el("div", { class: "hero__datos" },
+      el("div", { class: "hero__dato" }, el("strong", {}, String(datos?.distribuciones?.length ?? 26)), el("span", {}, "distribuciones")),
+      el("div", { class: "hero__dato" }, el("strong", {}, String(datos?.teoria?.length ?? 57)), el("span", {}, "lecciones")),
+      el("div", { class: "hero__dato" }, el("strong", {}, String(datos?.pruebas?.length ?? 13)), el("span", {}, "pruebas de hipótesis"))
     )
   );
-
   const herramientas = panel({
-    titulo: "¿Qué quieres hacer?",
-    subtitulo: "Elige una tarea; el resto lo guía la interfaz.",
-    icono: "objetivo",
-    contenido: el("div", { class: "rejilla rejilla--herramientas" }, HERRAMIENTAS.map(tarjetaHerramienta)),
+    titulo: "¿Qué quieres hacer?", icono: "objetivo",
+    contenido: el("div", { class: "rejilla rejilla--4" }, HERRAMIENTAS.map(tarjetaHerramienta)),
   });
-
+  const botonLimpiar = boton("Limpiar actividad", {
+    variante: "fantasma", pequeno: true, icono: "basura", deshabilitado: !entradas.length,
+    onClick: async () => {
+      if (!await confirmar({
+        titulo: "¿Limpiar la actividad?", texto: "Se borrarán los accesos recientes de este navegador. Las preferencias no cambiarán.", confirmar: "Limpiar",
+      })) return;
+      limpiarHistorial();
+      recientes.cuerpo.replaceChildren(actividad([]));
+      botonLimpiar.disabled = true;
+      toast("Actividad borrada", { tipo: "ok" });
+    },
+  });
   const recientes = panel({
-    titulo: "Continuar donde lo dejaste",
-    icono: "historial",
-    acciones: [
-      boton("Limpiar", {
-        variante: "fantasma",
-        pequeno: true,
-        icono: "basura",
-        onClick: async () => {
-          const { confirmar } = await import("../ui.js");
-          if (await confirmar({ titulo: "Limpiar actividad", texto: "Se borrará el historial local de cálculos recientes. Los datos de tus análisis no se eliminan del motor.", confirmar: "Limpiar" })) {
-            limpiarHistorial();
-            montar(host);
-          }
-        },
-      }),
-    ],
-    contenido: actividad(historial()),
+    titulo: "Actividad reciente", icono: "historial", acciones: [botonLimpiar], contenido: actividad(entradas),
   });
-
   const destacadas = panel({
-    titulo: "Modelos para empezar",
-    subtitulo: "Los cinco modelos que aparecen en casi todos los cursos.",
-    icono: "distribuciones",
-    contenido: el(
-      "div",
-      { class: "rejilla", style: { gap: "8px" } },
-      ["normal", "binomial", "poisson", "t_student", "exponencial"].map((clave) => {
-        const modelo = datos?.distribuciones?.find((d) => d.clave === clave);
-        return modelo ? destacada(modelo) : null;
-      })
-    ),
+    titulo: "Modelos para empezar", icono: "distribuciones",
+    contenido: modelos.length
+      ? el("div", { class: "rejilla", style: { gap: "8px" } }, modelos.map(destacada))
+      : estadoVacio({ icono: "distribuciones", titulo: "Catálogo no disponible", texto: "Vuelve a abrir Inicio cuando el motor esté disponible." }),
   });
+  host.append(el("div", { class: "vista" }, hero, herramientas,
+    el("div", { class: "rejilla rejilla--2", style: { alignItems: "start" } }, recientes, destacadas)
+  ));
 
-  const rutas = panel({
-    titulo: "Rutas sugeridas",
-    subtitulo: "Según el momento en el que estés.",
-    icono: "chispa",
-    contenido: el(
-      "div",
-      { class: "rejilla rejilla--2", style: { gap: "10px" } },
-      RUTAS.map((r) =>
-        el(
-          "a",
-          { class: "ruta-card", href: `#/${r.ruta}` },
-          el("span", { class: "ceja" }, r.ceja),
-          el("strong", {}, r.titulo),
-          el("p", {}, r.texto),
-          el("span", { class: "ruta-card__accion" }, r.accion, icono("flecha-derecha", { tamano: 13 }))
-        )
-      )
-    ),
-  });
-
-  const pasos = panel({
-    titulo: "Un flujo de trabajo honesto",
-    icono: "escudo",
-    contenido: el(
-      "div",
-      { class: "pasos" },
-      el("div", { class: "paso" }, el("strong", {}, "Configura y valida"), el("p", {}, "Los formularios conocen el dominio de cada parámetro y explican el rango antes de calcular.")),
-      el("div", { class: "paso" }, el("strong", {}, "Interpreta con contexto"), el("p", {}, "Cada salida incluye supuestos, intervalo, tamaño del efecto y una lectura en lenguaje claro.")),
-      el("div", { class: "paso" }, el("strong", {}, "Exporta y reproduce"), el("p", {}, "Descarga PNG, PDF, Excel o CSV. Las simulaciones y muestras guardan su semilla."))
-    ),
-  });
-
-  host.append(
-    el(
-      "div",
-      { class: "vista" },
-      hero,
-      herramientas,
-      el("div", { class: "rejilla rejilla--2" }, recientes, destacadas),
-      rutas,
-      pasos
-    )
-  );
-
-  // Las fórmulas de las tarjetas se renderizan después de insertar en el DOM.
-  const nodosFormula = host.querySelectorAll(".distribucion-mini__formula");
-  const claves = ["normal", "binomial", "poisson", "t_student", "exponencial"];
-  nodosFormula.forEach((nodo, i) => {
-    const modelo = datos?.distribuciones?.find((d) => d.clave === claves[i]);
-    if (modelo?.formula) latex(nodo, modelo.formula, { display: true });
-    else nodo.textContent = "";
-  });
 }

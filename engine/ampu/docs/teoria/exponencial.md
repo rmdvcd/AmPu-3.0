@@ -2,15 +2,13 @@
 
 ## Definición formal
 
-Tiempo de espera positivo hasta un suceso de proceso de Poisson con tasa $\lambda$. En AmPu 3.1 se parametriza exactamente como en `scipy.stats`;
-los eventos fuera del soporte reciben masa/densidad 0.
+Tiempo de espera no negativo hasta un suceso de un proceso de Poisson con tasa $\lambda$.
 
 ## Parámetros y rango
 
-| Parámetro | Significado | Rango | Valor de ejemplo |
+| Parámetro | Significado | Valores admitidos | Ejemplo |
 |---|---|---|---|
-| `tasa` | Tasa de eventos λ | > 0; sin límite | `1.0` |
-
+| `tasa` | Tasa de eventos λ | > 0 | 1 |
 
 ## Función de densidad (PDF)
 
@@ -24,26 +22,13 @@ $$
 F(x)=\begin{cases}1-e^{-\lambda x},&x\ge0\\0,&x<0\end{cases}
 $$
 
-En general, la CDF es $F(x)=P(X\le x)$. Para una variable continua,
-$P(a\le X\le b)=F(b)-F(a)$; para una discreta los extremos se incluyen
-según los saltos de su CDF. Para una cola superior, consulte la función de supervivencia; no sume densidades continuas.
+La acumulada es $F(x)=P(X\le x)$. Para un intervalo, $P(a\le X\le b)=F(b)-F(a)$. La densidad $f(x)$ no es una probabilidad puntual: $P(X=x)=0$.
 
 ## Media, varianza y desviación estándar
 
 $$
-\operatorname{E}[X]=\frac1\lambda
+\begin{aligned}\operatorname{E}[X]&=\frac1\lambda\\[4pt]\operatorname{Var}(X)&=\frac1{\lambda^2}\\[4pt]\sigma_X&=\sqrt{\operatorname{Var}(X)}\end{aligned}
 $$
-
-$$
-\operatorname{Var}(X)=\frac1{\lambda^2}
-$$
-
-$$
-\sigma_X=\sqrt{\operatorname{Var}(X)}
-$$
-
-En modelos multivariados los momentos anteriores son **por componente**.
-Si el momento no existe, la desviación tampoco está definida.
 
 ## Propiedades y casos especiales
 
@@ -51,14 +36,14 @@ Sin memoria: $P(X>s+t\mid X>s)=P(X>t)$. Su cola estable es $S(x)=e^{-\lambda x}$
 
 ![Representación de Exponencial](../imagenes/exponencial.png)
 
-*Figura 1. Curva teórica o primera marginal ilustrativa para Exponencial; no sustituye a la densidad conjunta de un modelo multivariante.*
+*Figura 1. Exponencial: representación ilustrativa de la función de densidad.*
 
 ## Ejemplo resuelto, paso a paso
 
-1. Configure `tasa=1.0` y el evento $x=4$.
-2. Sustituya los parámetros en la fórmula de densidad (PDF); obtenga densidad (no probabilidad puntual) **0.0183156**.
-3. Evalúe la CDF en ese mismo evento: **0.981684**. Para una cola superior, consulte la función de supervivencia; no sume densidades continuas.
-4. Interprete unidades y soporte antes de comunicar el resultado; la UI conserva todos los decimales internos.
+1. **Datos.** Usa `tasa` = 1 y evalúa el punto $x=4$.
+2. **Sustitución.** $f(4)=e^{-4}$. La densidad es **0,018316**.
+3. **Acumulada.** $F(4)=P(X\le 4)$ ≈ **0,981684**.
+4. **Interpretación.** La probabilidad de no superar 4 es aproximadamente 98,17 %. Para una probabilidad entre dos puntos, resta sus acumuladas.
 
 ## Referencias
 

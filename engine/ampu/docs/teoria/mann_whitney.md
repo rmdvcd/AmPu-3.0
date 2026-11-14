@@ -11,45 +11,28 @@ Prueba no paramétrica para dos grupos independientes basada en rangos.
 | `n₁,n₂` | Tamaños de los dos grupos |
 | `R₁` | Suma de rangos del primero |
 
-
-## Función, estadístico o regla de selección
+## Fórmula y procedimiento
 
 $$
 U_1=R_1-\frac{n_1(n_1+1)}2
 $$
 
-## Función de distribución acumulada (CDF)
+## Referencia y supuestos
 
-CDF de referencia o del estimador bajo las hipótesis indicadas.
-
-$$
-F_U(u)=P(U_1\le u)\quad\text{según la distribución de rangos de SciPy}
-$$
-
-## Media, varianza y desviación estándar
-
-$$
-\operatorname{E}[U_1]=\frac{n_1n_2}{2},\quad\operatorname{Var}(U_1)\approx\frac{n_1n_2(n_1+n_2+1)}{12}
-$$
-
-Si no se explicita $\sigma=\sqrt{\operatorname{Var}}$, se obtiene como raíz cuadrada de la varianza; cuando no existe, no debe reportarse un valor numérico.
+Bajo igualdad de distribuciones, la referencia se obtiene de los rangos conjuntos. AmPu usa la referencia exacta si no hay empates y algún grupo tiene como máximo 8 datos; en los demás casos usa la aproximación normal con correcciones por empates y continuidad. No presupone normalidad.
 
 ## Propiedades y casos especiales
 
-La interpretación como comparación de medianas presupone formas distribucionales similares; SciPy controla empates.
-
-![Esquema de Prueba de Mann–Whitney U](../imagenes/inferencia.png)
-
-*Figura 1. Representación orientativa del procedimiento o de su distribución de referencia.*
+La interpretación como comparación de medianas presupone formas distribucionales similares; la referencia asintótica corrige el efecto de los empates.
 
 ## Ejemplo resuelto, paso a paso
 
-1. Ordene conjuntamente muestras (1,2,3) y (4,5,6).
-2. Los rangos del primer grupo suman 6 y $U_1=6-3·4/2=0$.
-3. Compare el p-valor bilateral con α.
+1. **Datos.** Usa dos grupos independientes: A: `1 2 3` y B: `4 5 6`, con alternativa bilateral.
+2. **Rangos.** La suma de rangos de A es 6 y $U_A=6-3\cdot4/2=$ **0**.
+3. **Resultado.** Sin empates, el p-valor bilateral exacto es **0,1**.
+4. **Conclusión.** No rechaces $H_0$ al 5 %. Incluso una separación completa puede no ser concluyente con solo tres observaciones por grupo.
 
 ## Referencias
 
-- Cochran, W. G. (1977). *Sampling Techniques* (3.ª ed.). Wiley.
 - Casella, G., & Berger, R. L. (2002). *Statistical Inference* (2.ª ed.). Duxbury.
 - Virtanen, P., et al. (2020). SciPy 1.0: Fundamental algorithms for scientific computing in Python. *Nature Methods, 17*, 261–272. https://doi.org/10.1038/s41592-019-0686-2

@@ -1,3 +1,4 @@
+import { VISTAS } from "../data.js";
 import {
   el,
   panel,
@@ -19,7 +20,6 @@ import { icono } from "../icons.js";
 import { api } from "../api.js";
 import {
   PREFERENCIAS_POR_DEFECTO,
-  cargarMeta,
   guardarPrefs,
   historial,
   limpiarHistorial,
@@ -27,9 +27,6 @@ import {
   prefs,
   temaResuelto,
 } from "../store.js";
-import { ATAJOS } from "../data.js";
-
-const CLAVE_PREFS_EXPORT = "ampu.prefs.v1";
 
 const TEMAS = [
   { clave: "claro", nombre: "Claro", descripcion: "Fondo claro y tinta verde." },
@@ -74,13 +71,7 @@ function leerPrefsImportadas(texto) {
 }
 
 export async function montar(host) {
-  let metaDatos = null;
   let salud = null;
-  try {
-    metaDatos = await cargarMeta();
-  } catch {
-    /* la vista de ajustes funciona aunque el motor no responda */
-  }
   try {
     salud = await api.get("/api/salud");
   } catch {
@@ -95,6 +86,7 @@ export async function montar(host) {
   const rejillaTemas = el("div", { class: "rejilla rejilla--3" });
 
   function pintarTemas() {
+    const enfocada = [...temaBotones].find(([, nodo]) => nodo === document.activeElement)?.[0];
     rejillaTemas.replaceChildren();
     for (const tema of TEMAS) {
       const activo = prefs.tema === tema.clave;
@@ -106,7 +98,6 @@ export async function montar(host) {
           "aria-pressed": String(activo),
           onClick: () => {
             guardarPrefs({ tema: tema.clave });
-            pintarTemas();
             anunciar(`Tema ${tema.nombre}.`);
           },
         },
@@ -117,6 +108,7 @@ export async function montar(host) {
       temaBotones.set(tema.clave, boton);
       rejillaTemas.append(boton);
     }
+    if (enfocada) temaBotones.get(enfocada)?.focus({ preventScroll: true });
   }
 
   const selectorDensidad = campo({
@@ -134,17 +126,17 @@ export async function montar(host) {
     etiqueta: "Reducir animaciones",
     tipo: "checkbox",
     valor: Boolean(prefs.reducir_movimiento),
-    ayuda: "Desactiva transiciones y desplazamientos suaves si te distraen o afectan al rendimiento.",
+    ayuda: "Evita transiciones y desplazamientos suaves.",
   });
   casillaMovimiento.control.addEventListener("change", () => {
     guardarPrefs({ reducir_movimiento: casillaMovimiento.control.checked });
   });
 
   const casillaSidebar = campo({
-    etiqueta: "Mantener la barra lateral visible",
+    etiqueta: "Mantener el menú visible en escritorio",
     tipo: "checkbox",
     valor: prefs.sidebar !== false,
-    ayuda: "En pantallas grandes, deja la navegación fija mientras trabajas.",
+    ayuda: "En pantallas pequeñas se abre sobre el contenido.",
   });
   casillaSidebar.control.addEventListener("change", () => {
     guardarPrefs({ sidebar: casillaSidebar.control.checked });
@@ -156,11 +148,11 @@ export async function montar(host) {
   const muestraP = el("span", { class: "muestra-numero muestra-numero--p" });
   const campoDecimales = campo({
     etiqueta: "Decimales al mostrar resultados",
-    tipo: "numero",
+    tipo: "entero",
     valor: prefs.decimales,
     min: 0,
     max: 10,
-    ayuda: "Afecta a tablas, tarjetas, gráficos y exportaciones. Los cálculos internos conservan toda la precisión.",
+    ayuda: "De 0 a 10 decimales; no modifica los cálculos internos.",
     onInput: (valor) => {
       if (typeof valor !== "number") return;
       guardarPrefs({ decimales: Math.max(0, Math.min(10, Math.round(valor))) });
@@ -184,10 +176,10 @@ export async function montar(host) {
   }
 
   const casillaAuto = campo({
-    etiqueta: "Calcular automáticamente al cambiar un parámetro",
+    etiqueta: "Recalcular distribuciones automáticamente",
     tipo: "checkbox",
     valor: Boolean(prefs.calculo_automatico),
-    ayuda: "Desactívalo si prefieres revisar todos los valores antes de lanzar cada cálculo.",
+    ayuda: "Desactívalo para calcular solo al pulsar «Calcular».",
   });
   casillaAuto.control.addEventListener("change", () => {
     guardarPrefs({ calculo_automatico: casillaAuto.control.checked });
@@ -261,14 +253,6 @@ export async function montar(host) {
       const texto = await archivo.text();
       const importadas = leerPrefsImportadas(texto);
       guardarPrefs(importadas);
-      pintarTemas();
-      campoDecimales.setValor(prefs.decimales);
-      selectorNotacion.setValor(prefs.notacion);
-      selectorDensidad.setValor(prefs.densidad);
-      casillaAuto.control.checked = Boolean(prefs.calculo_automatico);
-      casillaSidebar.control.checked = prefs.sidebar !== false;
-      casillaMovimiento.control.checked = Boolean(prefs.reducir_movimiento);
-      pintarMuestra();
       toast("Preferencias importadas", { tipo: "ok" });
       anunciar("Preferencias importadas correctamente.");
     } catch (error) {
@@ -294,13 +278,13 @@ export async function montar(host) {
 
   const botonImportar = boton("Importar preferencias", {
     variante: "secundario",
-    icono: "carpeta",
+    icono: "importar",
     onClick: () => entradaArchivo.click(),
   });
 
   const botonRestablecer = boton("Restablecer preferencias", {
     variante: "peligro",
-    icono: "actualizar",
+    icono: "restablecer",
     onClick: async () => {
       const confirmado = await confirmar({
         titulo: "¿Restablecer las preferencias?",
@@ -310,14 +294,6 @@ export async function montar(host) {
       });
       if (!confirmado) return;
       guardarPrefs({ ...PREFERENCIAS_POR_DEFECTO, reducir_movimiento: false });
-      pintarTemas();
-      campoDecimales.setValor(prefs.decimales);
-      selectorNotacion.setValor(prefs.notacion);
-      selectorDensidad.setValor(prefs.densidad);
-      casillaAuto.control.checked = Boolean(prefs.calculo_automatico);
-      casillaSidebar.control.checked = prefs.sidebar !== false;
-      casillaMovimiento.control.checked = Boolean(prefs.reducir_movimiento);
-      pintarMuestra();
       toast("Preferencias restablecidas", { tipo: "ok" });
     },
   });
@@ -375,7 +351,6 @@ export async function montar(host) {
 
   const panelApariencia = panel({
     titulo: "Apariencia",
-    subtitulo: "Los cambios se aplican al instante y se guardan en este navegador.",
     icono: "monitor",
     contenido: el(
       "div",
@@ -386,8 +361,7 @@ export async function montar(host) {
   });
 
   const panelNumeros = panel({
-    titulo: "Formato de los números",
-    subtitulo: "Elige cuánta precisión ves sin perder la precisión interna del motor.",
+    titulo: "Formato y cálculo",
     icono: "calculadora",
     contenido: el(
       "div",
@@ -398,19 +372,8 @@ export async function montar(host) {
         el("span", { class: "muestra-formato__etiqueta" }, "Vista previa"),
         el("div", { class: "fila", style: { gap: "16px", flexWrap: "wrap" } }, muestraNumero, el("span", { class: "texto-tenue" }, "p ="), muestraP)
       ),
-      el("div", { class: "rejilla rejilla--2" }, campoDecimales.envoltura, selectorNotacion.envoltura)
-    ),
-  });
-
-  const panelComportamiento = panel({
-    titulo: "Comportamiento",
-    subtitulo: "Ajusta el ritmo del laboratorio a tu forma de trabajar.",
-    icono: "rayo",
-    contenido: el(
-      "div",
-      { class: "pila" },
-      casillaAuto.envoltura,
-      el("p", { class: "texto-tenue texto-pequeno" }, "El cálculo automático solo se activa después de la primera ejecución manual en cada herramienta, para no lanzar cálculos mientras escribes.")
+      el("div", { class: "rejilla rejilla--2" }, campoDecimales.envoltura, selectorNotacion.envoltura),
+      casillaAuto.envoltura
     ),
   });
 
@@ -424,86 +387,34 @@ export async function montar(host) {
 
   const panelDatos = panel({
     titulo: "Datos y privacidad",
-    subtitulo: "Tus cálculos y preferencias viven en este equipo. No se envía nada a internet.",
     icono: "candado",
     contenido: el(
       "div",
       { class: "pila" },
-      el("p", { class: "texto-articulo" }, "AmPu guarda preferencias, historial de cálculos y el último estado de cada modelo en el almacenamiento local del navegador. El servidor conserva una copia de las preferencias para que el escritorio y el navegador compartan configuración. No hay cuentas, analítica ni telemetría."),
-      el("div", { class: "fila", style: { flexWrap: "wrap" } }, botonExportar, botonImportar, botonRestablecer, entradaArchivo),
-      el("p", { class: "texto-tenue texto-pequeno" }, `Clave local de preferencias: ${CLAVE_PREFS_EXPORT}. Puedes borrarla desde la configuración del navegador.`)
+      el("p", { class: "texto-articulo" }, "El navegador guarda preferencias, actividad y estados de distribuciones. El servidor local conserva una copia de las preferencias. Sin cuentas ni telemetría."),
+      el("div", { class: "fila", style: { flexWrap: "wrap" } }, botonExportar, botonImportar, botonRestablecer, entradaArchivo)
     ),
   });
 
   const panelSalud = panel({
     titulo: "Estado del motor",
-    subtitulo: "Comprueba que el servidor local responde y qué versión está cargada.",
+    subtitulo: "Versión y diagnóstico del motor local.",
     icono: "escudo",
     acciones: [estadoMotor, botonComprobar],
-    contenido: detalleMotor,
-  });
-
-  const panelAcerca = panel({
-    titulo: "Acerca de AmPu 3.2",
-    subtitulo: "Asistente matemático local para probabilidad, estadística y muestreo.",
-    icono: "info",
-    contenido: el(
-      "div",
-      { class: "pila" },
-      el("p", { class: "texto-articulo" }, "AmPu combina un motor en Python (numpy, scipy, pandas) con una interfaz web sin dependencias externas. Las fórmulas se renderizan con KaTeX servido localmente, así que el laboratorio funciona sin conexión."),
-      el(
-        "div",
-        { class: "rejilla rejilla--kpi" },
-        kpiSimple("Distribuciones", metaDatos?.distribuciones?.length ?? salud?.distribuciones ?? "—"),
-        kpiSimple("Lecciones", metaDatos?.teoria?.length ?? salud?.lecciones ?? "—"),
-        kpiSimple("Pruebas", metaDatos?.pruebas?.length ?? "—"),
-        kpiSimple("Diseños de muestreo", metaDatos?.muestreo?.length ?? "—")
-      ),
-      el(
-        "div",
-        { class: "fila", style: { flexWrap: "wrap" } },
-        boton("Explorar la teoría", { variante: "secundario", pequeno: true, icono: "teoria", onClick: () => navegar("teoria") }),
-        boton("Volver al inicio", { variante: "fantasma", pequeno: true, icono: "inicio", onClick: () => navegar("inicio") }),
-        boton("Copiar información de diagnóstico", {
-          variante: "fantasma",
-          pequeno: true,
-          icono: "copiar",
-          onClick: () =>
-            copiar(
-              [
-                `AmPu ${salud?.version || "3.2.0"}`,
-                `Motor ${salud?.motor || "desconocido"}`,
-                `Tema ${prefs.tema} (${temaResuelto()})`,
-                `Densidad ${prefs.densidad}`,
-                `Decimales ${prefs.decimales}, notación ${prefs.notacion}`,
-                `Navegador ${navigator.userAgent}`,
-              ].join("\n")
-            ),
-        })
-      )
+    contenido: el("div", { class: "pila" }, detalleMotor,
+      boton("Copiar información de diagnóstico", {
+        variante: "fantasma", pequeno: true, icono: "copiar",
+        onClick: () => copiar([
+          `AmPu ${salud?.version || "3.2.0"}`,
+          `Motor ${salud?.motor || "desconocido"}`,
+          `Tema ${prefs.tema} (${temaResuelto()})`,
+          `Densidad ${prefs.densidad}`,
+          `Decimales ${prefs.decimales}, notación ${prefs.notacion}`,
+          `Navegador ${navigator.userAgent}`,
+        ].join("\n")),
+      })
     ),
   });
-
-  const panelAtajos = panel({
-    titulo: "Atajos de teclado",
-    icono: "teclado",
-    contenido: el(
-      "div",
-      { class: "lista-atajos" },
-      ATAJOS.map((atajo) =>
-        el(
-          "div",
-          { class: "atajo-fila" },
-          el("span", {}, atajo.texto),
-          el("span", { class: "teclas" }, atajo.teclas.map((t) => el("kbd", {}, t)))
-        )
-      )
-    ),
-  });
-
-  function kpiSimple(etiqueta, valor) {
-    return el("div", { class: "kpi" }, el("span", { class: "kpi__etiqueta" }, etiqueta), el("span", { class: "kpi__valor" }, String(valor)));
-  }
 
   host.append(
     el(
@@ -515,7 +426,7 @@ export async function montar(host) {
         el(
           "div",
           {},
-          el("span", { class: "ceja" }, "Aprender · Preferencias"),
+          el("span", { class: "ceja" }, "Sistema · Preferencias"),
           el(
             "div",
             { class: "vista__titulo" },
@@ -525,21 +436,29 @@ export async function montar(host) {
           el(
             "p",
             { class: "vista__subtitulo" },
-            "Personaliza la lectura, el formato numérico y el comportamiento del laboratorio. Todo se guarda localmente y puedes exportarlo o restablecerlo."
+            VISTAS.ajustes.subtitulo
           )
-        ),
-        el("div", { class: "vista__acciones" }, boton("Ayuda y atajos", { variante: "secundario", icono: "ayuda", onClick: () => window.dispatchEvent(new CustomEvent("ampu:ayuda")) }))
+        )
       ),
       el("div", { class: "rejilla rejilla--2" }, panelApariencia, panelNumeros),
-      el("div", { class: "rejilla rejilla--2" }, panelComportamiento, panelSalud),
-      panelHistorial,
-      el("div", { class: "rejilla rejilla--2" }, panelDatos, panelAtajos),
-      panelAcerca
+      el("div", { class: "rejilla rejilla--2", style: { alignItems: "start" } }, panelSalud, panelHistorial),
+      panelDatos
     )
   );
 
-  pintarTemas();
-  pintarMuestra();
+  function sincronizarControles() {
+    pintarTemas();
+    campoDecimales.setValor(prefs.decimales);
+    selectorNotacion.setValor(prefs.notacion);
+    selectorDensidad.setValor(prefs.densidad);
+    casillaAuto.setValor(prefs.calculo_automatico);
+    casillaSidebar.setValor(prefs.sidebar);
+    casillaMovimiento.setValor(prefs.reducir_movimiento);
+    pintarMuestra();
+  }
+  sincronizarControles();
   pintarHistorial();
   pintarSalud();
+  window.addEventListener("ampu:prefs", sincronizarControles);
+  return () => window.removeEventListener("ampu:prefs", sincronizarControles);
 }

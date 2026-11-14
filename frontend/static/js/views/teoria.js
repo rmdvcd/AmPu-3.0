@@ -1,5 +1,6 @@
 import {
   el,
+  fragmento,
   panel,
   boton,
   badge,
@@ -9,15 +10,15 @@ import {
   esqueletoPanel,
   copiar,
   fmtNum,
-  latex,
   renderMath,
   anunciar,
   comportamientoScroll,
 } from "../ui.js";
 import { icono } from "../icons.js";
+import { contenidoLectura } from "../lectura.js";
 import { api, esCancelacion } from "../api.js";
 import { cargarMeta, navegar, registrarHistorial } from "../store.js";
-import { ETIQUETAS_CATEGORIA, herramientaDeLeccion } from "../data.js";
+import { VISTAS, ETIQUETAS_CATEGORIA, herramientaDeLeccion } from "../data.js";
 
 const CLAVE_LEIDAS = "ampu3.teoria.leidas";
 const ORDEN_CATEGORIAS = ["distribuciones", "analisis", "inferencia", "muestreo", "otros"];
@@ -46,34 +47,6 @@ function guardarLeidas(conjunto) {
   }
 }
 
-/** Limpia el HTML de una lección local antes de insertarlo. */
-function htmlSeguro(texto) {
-  const documento = new DOMParser().parseFromString(String(texto || ""), "text/html");
-  documento.querySelectorAll("script, style, iframe, object, embed, form, input, textarea, select, button").forEach((n) => n.remove());
-  for (const nodo of documento.body.querySelectorAll("*")) {
-    for (const atributo of [...nodo.attributes]) {
-      const nombre = atributo.name.toLowerCase();
-      if (nombre.startsWith("on")) nodo.removeAttribute(atributo.name);
-      if ((nombre === "href" || nombre === "src") && /^\s*javascript:/i.test(atributo.value)) {
-        nodo.removeAttribute(atributo.name);
-      }
-    }
-    if (nodo.tagName === "A") {
-      const href = nodo.getAttribute("href") || "";
-      if (/^https?:\/\//i.test(href)) {
-        nodo.setAttribute("target", "_blank");
-        nodo.setAttribute("rel", "noopener noreferrer");
-      }
-    }
-    if (nodo.tagName === "IMG") {
-      nodo.setAttribute("loading", "lazy");
-      nodo.setAttribute("decoding", "async");
-      nodo.classList.add("imagen-leccion");
-    }
-  }
-  return documento.body;
-}
-
 export async function montar(host, parametro) {
   let metaDatos;
   try {
@@ -96,10 +69,9 @@ export async function montar(host, parametro) {
   let activa = porClave.has(parametro) ? parametro : predeterminada;
   let controlador = null;
   const cache = new Map();
-  const leidasActuales = leidas();
 
   const entradaBusqueda = el("input", { type: "search", placeholder: "Buscar una lección…", "aria-label": "Buscar en la teoría" });
-  const lista = el("div", { class: "lista-modelos", role: "list" });
+  const lista = el("div", { class: "lista-modelos", role: "group", "aria-label": "Lecciones de teoría" });
   const contadorLectura = el("span", { class: "chip" }, "");
   const catalogo = panel({
     titulo: "Biblioteca",
@@ -134,10 +106,9 @@ export async function montar(host, parametro) {
           el(
             "p",
             { class: "vista__subtitulo" },
-            "Cada lección conecta la definición con una herramienta del laboratorio. Texto, fórmulas e imágenes se sirven sin conexión."
+            VISTAS.teoria.subtitulo
           )
-        ),
-        el("div", { class: "vista__acciones" }, boton("Ir a distribuciones", { variante: "secundario", icono: "distribuciones", onClick: () => navegar("distribuciones") }))
+        )
       ),
       miga,
       el("div", { class: "dividido dividido--teoria" }, catalogo, articulo)
@@ -169,7 +140,6 @@ export async function montar(host, parametro) {
             {
               class: "modelo-item",
               type: "button",
-              role: "listitem",
               "aria-pressed": String(leccion.clave === activa),
               onClick: () => seleccionar(leccion.clave),
             },
@@ -257,9 +227,7 @@ export async function montar(host, parametro) {
     renderLista();
     actualizarMiga();
 
-    const cuerpo = el("div", { class: "texto-articulo" });
-    cuerpo.append(htmlSeguro(contenido.html));
-    cuerpo.querySelector("h1")?.remove();
+    const cuerpo = contenidoLectura(contenido.html, { bajoTitulo: true });
 
     // Botones de copia para bloques de código.
     for (const pre of cuerpo.querySelectorAll("pre")) {
@@ -279,44 +247,30 @@ export async function montar(host, parametro) {
     }
 
     const toc = Array.isArray(contenido.toc) ? contenido.toc.filter((t) => t.nivel >= 2 && t.nivel <= 3) : [];
-    const tocNodo =
-      toc.length > 2
-        ? panel({
-            titulo: "En esta lección",
-            icono: "menu",
-            clase: "panel--toc",
-            contenido: el(
-              "div",
-              { class: "toc-lista" },
-              toc.map((item) =>
-                el(
-                  "button",
-                  {
-                    type: "button",
-                    class: `toc-enlace toc-enlace--n${item.nivel}`,
-                    onClick: () => {
-                      const destino = cuerpo.querySelector(`#${CSS.escape(item.id)}`);
-                      destino?.scrollIntoView({ behavior: comportamientoScroll(), block: "start" });
-                    },
-                  },
-                  item.texto
-                )
-              )
-            ),
-          })
-        : null;
-
-    const formulaNodo = el("div", { class: "formula-card" }, el("span", { class: "formula-etiqueta" }, "Fórmula central"));
-    const destinoFormula = el("div");
-    formulaNodo.append(destinoFormula);
-    if (contenido.formula) latex(destinoFormula, contenido.formula, { display: true });
+    const tocNodo = toc.length > 2
+      ? el("details", { class: "indice-leccion" },
+          el("summary", {}, icono("lista", { tamano: 17 }), "En esta lección", icono("flecha-abajo", { tamano: 15 })),
+          el("nav", { class: "toc-lista", "aria-label": "Secciones de esta lección" },
+            toc.map((item) => boton(item.texto, {
+              variante: "fantasma", pequeno: true, clase: `toc-enlace toc-enlace--n${item.nivel}`,
+              onClick: () => {
+                const destino = cuerpo.querySelector(`#${CSS.escape(item.id)}`);
+                if (!destino) return;
+                destino.tabIndex = -1;
+                destino.focus({ preventScroll: true });
+                destino.scrollIntoView({ behavior: comportamientoScroll(), block: "start" });
+              },
+            }))
+          )
+        )
+      : null;
 
     const herramienta = herramientaDeLeccion(contenido.clave, metaDatos);
     const acciones = [
       contenido.formula ? boton("Copiar fórmula", { variante: "fantasma", pequeno: true, icono: "copiar", onClick: () => copiar(contenido.formula) }) : null,
       boton("Copiar enlace", { variante: "fantasma", pequeno: true, icono: "enlace", onClick: () => copiar(`${location.origin}${location.pathname}#/teoria/${contenido.clave}`) }),
       boton("Imprimir", { variante: "fantasma", pequeno: true, icono: "imprimir", onClick: () => window.print() }),
-      herramienta ? boton(herramienta.etiqueta, { variante: "secundario", pequeno: true, icono: "reproducir", onClick: () => navegar(herramienta.ruta) }) : null,
+      herramienta ? boton(herramienta.etiqueta, { variante: "secundario", pequeno: true, icono: VISTAS[herramienta.ruta.split("/")[0]]?.icono || "externo", onClick: () => navegar(herramienta.ruta) }) : null,
     ].filter(Boolean);
 
     const anteriores = contenido.navegacion;
@@ -324,10 +278,10 @@ export async function montar(host, parametro) {
       "footer",
       { class: "leccion-pie" },
       anteriores?.anterior
-        ? boton(`← ${anteriores.anterior.titulo}`, { variante: "secundario", onClick: () => seleccionar(anteriores.anterior.clave) })
+        ? boton(anteriores.anterior.titulo, { variante: "secundario", icono: "flecha-izquierda", ariaLabel: `Lección anterior: ${anteriores.anterior.titulo}`, onClick: () => seleccionar(anteriores.anterior.clave) })
         : el("span"),
       anteriores?.siguiente
-        ? boton(`${anteriores.siguiente.titulo} →`, { variante: "secundario", onClick: () => seleccionar(anteriores.siguiente.clave) })
+        ? boton(anteriores.siguiente.titulo, { variante: "secundario", icono: "flecha-derecha", ariaLabel: `Lección siguiente: ${anteriores.siguiente.titulo}`, onClick: () => seleccionar(anteriores.siguiente.clave) })
         : el("span")
     );
 
@@ -350,7 +304,7 @@ export async function montar(host, parametro) {
         })
       : null;
 
-    articulo.replaceChildren(
+    articulo.replaceChildren(fragmento(
       el(
         "header",
         { class: "articulo-cabecera" },
@@ -362,15 +316,13 @@ export async function montar(host, parametro) {
           el("span", { class: "chip chip--ok" }, icono("comprobar", { tamano: 12 }), "leída")
         ),
         el("h2", { tabindex: "-1" }, contenido.titulo),
-        contenido.resumen ? el("p", { class: "texto-tenue" }, contenido.resumen) : null,
         el("div", { class: "fila", style: { gap: "6px", flexWrap: "wrap" } }, acciones)
       ),
       tocNodo,
-      contenido.formula ? formulaNodo : null,
       cuerpo,
       relacionados,
       pie
-    );
+    ));
     renderMath(articulo);
     articulo.scrollIntoView({ behavior: comportamientoScroll(), block: "start" });
     registrarHistorial({ titulo: `Teoría · ${contenido.titulo}`, detalle: `${contenido.minutos} min`, ruta: `teoria/${contenido.clave}`, tipo: "teoria", icono: "teoria" });

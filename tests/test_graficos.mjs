@@ -201,6 +201,31 @@ test("leyendas de todos los gráficos: tamaño, ajuste e interacción", {
         });
       }
     }
+    await t.test("zoom con Ctrl y rueda; Meta y combinaciones ajenas no se interceptan", async () => {
+      await pagina.goto(url);
+      const resultado = await pagina.evaluate(async () => {
+        const { dibujar } = await import("/static/js/chart.js");
+        const host = document.querySelector("#grafico");
+        host.style.width = "760px";
+        dibujar(host, { series: [{ nombre: "Valores", x: [0, 1, 2, 3], y: [1, 3, 2, 4] }] });
+        const enviar = (evento) => {
+          host.querySelector(":scope > svg").dispatchEvent(evento);
+          return evento.defaultPrevented;
+        };
+        const rueda = (modificadores) => enviar(new WheelEvent("wheel", { bubbles: true, cancelable: true, deltaY: -100, clientX: 200, ...modificadores }));
+        const tecla = (key, modificadores = {}) => enviar(new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true, ...modificadores }));
+        return {
+          metaRueda: rueda({ metaKey: true }), ctrlMetaRueda: rueda({ ctrlKey: true, metaKey: true }),
+          ctrlRueda: rueda({ ctrlKey: true }), ampliado: Array.isArray(host._vista),
+          metaFlecha: tecla("ArrowRight", { metaKey: true }), ctrlFlecha: tecla("ArrowRight", { ctrlKey: true }),
+          flecha: tecla("ArrowRight"),
+        };
+      });
+      assert.deepEqual(resultado, {
+        metaRueda: false, ctrlMetaRueda: false, ctrlRueda: true, ampliado: true,
+        metaFlecha: false, ctrlFlecha: false, flecha: true,
+      });
+    });
     await pagina.close();
   } finally {
     await navegador?.close();

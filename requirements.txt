@@ -9,6 +9,7 @@ numpy==1.26.0
 scipy==1.11.4            # 1.11.0 fue retirada de PyPI; 1.11.4 es la revisión de la misma serie
 pandas==2.1.0
 mpmath==1.4.1            # órdenes de magnitud de factoriales y combinaciones enormes
+pystray==0.19.5; sys_platform == 'win32'  # bandeja nativa de Windows; Pillow ya está incluido
 matplotlib==3.8.0        # figuras de las exportaciones a PDF y PNG
 openpyxl==3.1.2          # exportación a Excel
 reportlab==4.0.5         # exportación a PDF

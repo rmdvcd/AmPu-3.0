@@ -11,45 +11,28 @@ Contrasta si las diferencias de pares tienden a cero a partir de sus rangos abso
 | `dᵢ` | Diferencias de pares no idénticos |
 | `W` | Suma de rangos con signo |
 
-
-## Función, estadístico o regla de selección
+## Fórmula y procedimiento
 
 $$
 W_+=\sum_{i:d_i>0}\operatorname{rango}(|d_i|)
 $$
 
-## Función de distribución acumulada (CDF)
+## Referencia y supuestos
 
-CDF de referencia o del estimador bajo las hipótesis indicadas.
-
-$$
-F_W(w)=P(W\le w)\quad\text{con distribución exacta/asintótica según SciPy}
-$$
-
-## Media, varianza y desviación estándar
-
-$$
-\operatorname{E}[W_+]\approx\frac{n(n+1)}4,\quad\operatorname{Var}(W_+)\approx\frac{n(n+1)(2n+1)}{24}
-$$
-
-Si no se explicita $\sigma=\sqrt{\operatorname{Var}}$, se obtiene como raíz cuadrada de la varianza; cuando no existe, no debe reportarse un valor numérico.
+Para una alternativa bilateral, AmPu informa $W=\min(W_+,W_-)$. Las diferencias deben ser aproximadamente simétricas bajo la hipótesis de ubicación. AmPu usa referencia exacta con hasta 50 diferencias no nulas, sin ceros ni empates en valor absoluto. En los demás casos usa una aproximación normal y advierte de sus limitaciones.
 
 ## Propiedades y casos especiales
 
-Pares con diferencia cero reciben manejo especial; los tamaños y empates afectan la aproximación.
-
-![Esquema de Prueba de Wilcoxon pareada](../imagenes/inferencia.png)
-
-*Figura 1. Representación orientativa del procedimiento o de su distribución de referencia.*
+La hipótesis de simetría es importante: sin ella, la prueba no se interpreta simplemente como una comparación de medianas. AmPu omite las diferencias nulas según la convención de SciPy.
 
 ## Ejemplo resuelto, paso a paso
 
-1. Compare antes (1,2,3,4) y después (2,4,4,7).
-2. Calcule diferencias, ordene magnitudes y sume rangos positivos/negativos.
-3. Use la p bilateral para evaluar si la ubicación cambió.
+1. **Datos.** Usa mediciones pareadas A: `1 2 3 4` y B: `2 4 6 8`, con alternativa bilateral.
+2. **Rangos con signo.** Las diferencias $A-B$ son −1, −2, −3 y −4. Sus rangos absolutos son 1, 2, 3 y 4; $W_+=0$ y $W_-=10$.
+3. **Resultado.** El estadístico bilateral es $\min(W_+,W_-)=$ **0**, con p-valor exacto **0,125**.
+4. **Conclusión.** No rechaces al 5 %. La prueba presupone pares independientes entre sí y una distribución aproximadamente simétrica de sus diferencias.
 
 ## Referencias
 
-- Cochran, W. G. (1977). *Sampling Techniques* (3.ª ed.). Wiley.
 - Casella, G., & Berger, R. L. (2002). *Statistical Inference* (2.ª ed.). Duxbury.
 - Virtanen, P., et al. (2020). SciPy 1.0: Fundamental algorithms for scientific computing in Python. *Nature Methods, 17*, 261–272. https://doi.org/10.1038/s41592-019-0686-2

@@ -12,45 +12,28 @@ Un intervalo cuantifica variabilidad de un estimador, no la probabilidad posteri
 | `s` | Desviación muestral |
 | `n` | Observaciones; n ≥2 |
 
-
-## Función, estadístico o regla de selección
+## Fórmula y procedimiento
 
 $$
 IC_{1-\alpha}(\mu)=\bar x\pm t_{1-\alpha/2,n-1}\frac{s}{\sqrt n}
 $$
 
-## Función de distribución acumulada (CDF)
+## Cobertura y supuestos
 
-CDF de referencia o del estimador bajo las hipótesis indicadas.
-
-$$
-P\!\left(\bar X\le t\mid \mu,\sigma\right)\approx\Phi\left(\frac{t-\mu}{\sigma/\sqrt n}\right)
-$$
-
-## Media, varianza y desviación estándar
-
-$$
-\operatorname{E}[\bar X]=\mu,\quad\operatorname{Var}(\bar X)=\sigma^2/n,\quad\sigma_{\bar X}=\sigma/\sqrt n
-$$
-
-Si no se explicita $\sigma=\sqrt{\operatorname{Var}}$, se obtiene como raíz cuadrada de la varianza; cuando no existe, no debe reportarse un valor numérico.
+Con datos normales independientes y desviación poblacional desconocida, la media usa la referencia t. La confianza describe la cobertura del procedimiento en muestreos repetidos. Para una proporción, AmPu muestra Wilson en la prueba z o Clopper–Pearson en la binomial exacta; no se debe reutilizar la fórmula t.
 
 ## Propiedades y casos especiales
 
 Para proporciones se usa Wilson, estable incluso con 0 o n éxitos. Error relativo = $|\hat\theta-\theta|/|\theta|$, indefinido si $\theta=0$.
 
-![Esquema de Intervalos de confianza y error](../imagenes/inferencia.png)
-
-*Figura 1. Representación orientativa del procedimiento o de su distribución de referencia.*
-
 ## Ejemplo resuelto, paso a paso
 
-1. Muestra de $n=16$, media 20, $s=4$ y confianza 95 %.
-2. Con 15 grados de libertad, $t_{0,975}=2,131$.
-3. IC: $20\pm2,131(4/4)=[17,87;22,13]$.
+1. **Datos.** Supón una muestra normal con $n=16$, media 20, desviación muestral 4 y confianza del 95 %.
+2. **Margen.** Con 15 grados de libertad, $t_{0{,}975;15}\approx2{,}13145$ y $s/\sqrt n=1$.
+3. **Intervalo.** $20\pm2{,}13145$ produce aproximadamente **[17,87; 22,13]**.
+4. **Interpretación.** El método tiene cobertura del 95 % bajo sus supuestos en muestreos repetidos. No asigna un 95 % de probabilidad posterior al parámetro fijo de esta muestra.
 
 ## Referencias
 
-- Cochran, W. G. (1977). *Sampling Techniques* (3.ª ed.). Wiley.
 - Casella, G., & Berger, R. L. (2002). *Statistical Inference* (2.ª ed.). Duxbury.
 - Virtanen, P., et al. (2020). SciPy 1.0: Fundamental algorithms for scientific computing in Python. *Nature Methods, 17*, 261–272. https://doi.org/10.1038/s41592-019-0686-2

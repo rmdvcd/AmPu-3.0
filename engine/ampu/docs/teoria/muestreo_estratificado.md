@@ -12,42 +12,26 @@ Divide la población en estratos disjuntos; toma una muestra aleatoria sin reemp
 | `N` | Suma de N_h |
 | `n` | Tamaño de muestra total |
 
-
-## Función, estadístico o regla de selección
+## Fórmula y procedimiento
 
 $$
 n_h\approx n\frac{N_h}{N},\qquad\sum_h n_h=n
 $$
 
-## Función de distribución acumulada (CDF)
+## Selección e inclusión
 
-CDF del indicador de inclusión o aproximación de diseño; no existe una única CDF de toda la técnica.
-
-$$
-P(I_{hi}\le t)=\begin{cases}0,&t<0\\1-n_h/N_h,&0\le t<1\\1,&t\ge1\end{cases}
-$$
-
-## Media, varianza y desviación estándar
-
-$$
-\operatorname{E}[I_{hi}]=n_h/N_h,\quad\operatorname{Var}(I_{hi})=(n_h/N_h)(1-n_h/N_h)
-$$
-
-Si no se explicita $\sigma=\sqrt{\operatorname{Var}}$, se obtiene como raíz cuadrada de la varianza; cuando no existe, no debe reportarse un valor numérico.
+Los estratos forman una partición de la población. Dentro del estrato $h$, se seleccionan $n_h$ unidades sin reemplazo; su probabilidad de inclusión es $n_h/N_h$. Los redondeos deben conservar el tamaño total sin superar el tamaño de ningún estrato.
 
 ## Propiedades y casos especiales
 
 Se usan mayores restos para obtener enteros de suma exactamente $n$. Cada $n_h$ está acotado por $N_h$; se reproducen sorteos con una sola semilla.
 
-![Esquema de Muestreo estratificado proporcional](../imagenes/muestreo.png)
-
-*Figura 1. Representación orientativa del procedimiento o de su distribución de referencia.*
-
 ## Ejemplo resuelto, paso a paso
 
-1. Dos estratos tienen $N_1=100$, $N_2=200$ y $n=30$.
-2. Los tamaños proporcionales son $n_1=30(100/300)=10$, $n_2=20$.
-3. Sortea 10 unidades del primero y 20 del segundo, sin reemplazo.
+1. **Datos.** Define dos estratos, A con 100 unidades y B con 200, y fija un tamaño total de 30.
+2. **Asignación.** $n_A=30(100/300)=$ **10** y $n_B=30(200/300)=$ **20**.
+3. **Selección.** Desactiva el tamaño automático, elige el diseño proporcional y usa la semilla 42. Extrae 10 identificadores de A y 20 de B, sin reemplazo.
+4. **Interpretación.** Para estimar una media poblacional, combina las medias de los estratos con pesos $100/300$ y $200/300$.
 
 ## Referencias
 

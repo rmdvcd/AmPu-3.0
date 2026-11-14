@@ -2,7 +2,7 @@
 
 ## Definición formal
 
-Prueba igualdad de medias de 2 o más grupos independientes mediante la razón de variaciones.
+Contrasta la igualdad de medias de dos o más grupos independientes mediante una razón de variaciones.
 
 ## Parámetros y rango
 
@@ -12,45 +12,28 @@ Prueba igualdad de medias de 2 o más grupos independientes mediante la razón d
 | `nᵢ` | Tamaños de grupo |
 | `α` | Significación |
 
-
-## Función, estadístico o regla de selección
+## Fórmula y procedimiento
 
 $$
 F=\frac{SS_{\mathrm{entre}}/(k-1)}{SS_{\mathrm{dentro}}/(N-k)}
 $$
 
-## Función de distribución acumulada (CDF)
+## Distribución de referencia
 
-CDF de referencia o del estimador bajo las hipótesis indicadas.
-
-$$
-F_F(x)=I_{(k-1)x/[(k-1)x+N-k]}\left(\frac{k-1}{2},\frac{N-k}{2}\right)
-$$
-
-## Media, varianza y desviación estándar
-
-$$
-\operatorname{E}[F]=\frac{N-k}{N-k-2}\ (N-k>2),\quad\sigma_F=\sqrt{\operatorname{Var}(F)}
-$$
-
-Si no se explicita $\sigma=\sqrt{\operatorname{Var}}$, se obtiene como raíz cuadrada de la varianza; cuando no existe, no debe reportarse un valor numérico.
+Bajo igualdad de medias, independencia, normalidad de los errores y varianza común, la razón sigue una $F_{k-1,N-k}$. El p-valor corresponde a su cola derecha. La diferencia entre medias no puede evaluarse solo mirando sus valores: también hace falta la variación dentro de los grupos.
 
 ## Propiedades y casos especiales
 
 Requiere independencia y varianzas similares; rechazar H₀ no identifica qué pares difieren.
 
-![Esquema de ANOVA de una vía](../imagenes/inferencia.png)
-
-*Figura 1. Representación orientativa del procedimiento o de su distribución de referencia.*
-
 ## Ejemplo resuelto, paso a paso
 
-1. Compare tres grupos con medias 3, 6 y 10.
-2. Calcule sumas de cuadrados entre y dentro, y sus grados de libertad 2 y $N-3$.
-3. Divida medias cuadráticas, consulte cola F y compare p con α.
+1. **Datos.** Usa tres grupos, uno por línea: `2 3 4`, `5 6 7` y `9 10 11`. Sus medias son 3, 6 y 10.
+2. **Variación.** La suma de cuadrados entre grupos es 74 y la interna es 6. Sus grados de libertad son 2 y 6.
+3. **Resultado.** $F=(74/2)/(6/6)=$ **37**. La cola $F_{2,6}$ da p-valor **0,000422**.
+4. **Conclusión.** Rechaza la igualdad global al 5 %. Para identificar qué pares difieren se necesitan comparaciones posteriores con control de multiplicidad.
 
 ## Referencias
 
-- Cochran, W. G. (1977). *Sampling Techniques* (3.ª ed.). Wiley.
 - Casella, G., & Berger, R. L. (2002). *Statistical Inference* (2.ª ed.). Duxbury.
 - Virtanen, P., et al. (2020). SciPy 1.0: Fundamental algorithms for scientific computing in Python. *Nature Methods, 17*, 261–272. https://doi.org/10.1038/s41592-019-0686-2

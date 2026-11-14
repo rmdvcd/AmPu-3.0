@@ -2,15 +2,15 @@
 
 ## Definición formal
 
-Distribución de un vector de proporciones positivas que suman exactamente uno. En AmPu 3.1 se parametriza exactamente como en `scipy.stats`;
-los eventos fuera del soporte reciben masa/densidad 0.
+Distribución de un vector de proporciones positivas que suman exactamente uno.
 
 ## Parámetros y rango
 
-| Parámetro | Significado | Rango | Valor de ejemplo |
+| Parámetro | Significado | Valores admitidos | Ejemplo |
 |---|---|---|---|
-| `alpha` | Concentraciones positivas | > 0; sin límite | `(2.0, 3.0, 4.0)` |
+| `alpha` | Concentraciones positivas | Cada componente: > 0 | (2; 3; 4) |
 
+Cada concentración es positiva. El vector observado tiene componentes positivos que suman 1. En los campos vectoriales separa los componentes con espacios: `0,2 0,3 0,5`.
 
 ## Función de densidad (PDF)
 
@@ -24,41 +24,30 @@ $$
 F_i(t)=I_t(\alpha_i,\alpha_0-\alpha_i)
 $$
 
-En general, la CDF es $F(x)=P(X\le x)$. Para una variable continua,
-$P(a\le X\le b)=F(b)-F(a)$; para una discreta los extremos se incluyen
-según los saltos de su CDF. Las CDF mostradas son marginales por componente, no una CDF conjunta.
+Cada $F_i(t)=P(X_i\le t)$ es una **acumulada marginal**. No es la acumulada conjunta del vector.
 
 ## Media, varianza y desviación estándar
 
 $$
-\operatorname{E}[X_i]=\frac{\alpha_i}{\alpha_0}
+\begin{aligned}\operatorname{E}[X_i]&=\frac{\alpha_i}{\alpha_0}\\[4pt]\operatorname{Var}(X_i)&=\frac{\alpha_i(\alpha_0-\alpha_i)}{\alpha_0^2(\alpha_0+1)}\\[4pt]\sigma_{X_i}&=\sqrt{\operatorname{Var}(X_i)}\end{aligned}
 $$
 
-$$
-\operatorname{Var}(X_i)=\frac{\alpha_i(\alpha_0-\alpha_i)}{\alpha_0^2(\alpha_0+1)}
-$$
-
-$$
-\sigma_X=\sqrt{\operatorname{Var}(X)}
-$$
-
-En modelos multivariados los momentos anteriores son **por componente**.
-Si el momento no existe, la desviación tampoco está definida.
+Los momentos se interpretan **por componente**; la dependencia entre componentes se describe mediante sus covarianzas.
 
 ## Propiedades y casos especiales
 
-Sus marginales son beta; la CDF/PPF de AmPu son **marginales**, no conjuntas. Para dos componentes equivale a una beta.
+Sus marginales son beta; la CDF/PPF de AmPu son **marginales**, no conjuntas. Para dos componentes equivale a una beta. La densidad conjunta puede superar 1: no es una probabilidad puntual.
 
 ![Representación de Dirichlet](../imagenes/dirichlet.png)
 
-*Figura 1. Curva teórica o primera marginal ilustrativa para Dirichlet; no sustituye a la densidad conjunta de un modelo multivariante.*
+*Figura 1. Primera marginal de Dirichlet; no representa la función conjunta.*
 
 ## Ejemplo resuelto, paso a paso
 
-1. Configure `alpha=(2.0, 3.0, 4.0)` y el evento $x=0.2, 0.3, 0.5$.
-2. Sustituya los parámetros en la fórmula de densidad (PDF); obtenga densidad (no probabilidad puntual) **7.56**.
-3. Evalúe la CDF en ese mismo evento: **0.496684, 0.448226, 0.636719**. Las CDF mostradas son marginales por componente, no una CDF conjunta.
-4. Interprete unidades y soporte antes de comunicar el resultado; la UI conserva todos los decimales internos.
+1. **Datos.** Usa `alpha` = (2; 3; 4) y evalúa el punto $\boldsymbol{x}=\left(0{,}2;\,0{,}3;\,0{,}5\right)$.
+2. **Sustitución.** $f(\boldsymbol{x})=3360(0{,}2)(0{,}3)^2(0{,}5)^3$. La densidad es **7,56**.
+3. **Acumulada.** Las acumuladas marginales, en el orden de los componentes, son **(0,496684; 0,448226; 0,636719)**.
+4. **Interpretación.** La función del paso 2 es conjunta; las acumuladas del paso 3 son marginales. No las multipliques como si los componentes fueran independientes.
 
 ## Referencias
 

@@ -15,7 +15,8 @@ import {
   prefs,
   temaResuelto,
 } from "./store.js";
-import { ATAJOS, NAV, ORDEN_VISTAS, VISTAS } from "./data.js";
+import { NAV, ORDEN_VISTAS, VISTAS } from "./data.js";
+import { accionAtajo } from "./atajos.js";
 
 const MODULOS = {
   inicio: () => import("./views/inicio.js"),
@@ -87,29 +88,80 @@ function aplicarMovimiento() {
   document.documentElement.dataset.movimiento = reducido ? "reducido" : "normal";
 }
 
-function aplicarSidebar() {
-  if (!aplicacion) return;
-  const escritorio = window.innerWidth > 900;
-  if (escritorio) {
-    aplicacion.classList.remove("sidebar-abierta");
-    aplicacion.classList.toggle("sidebar-plegada", prefs.sidebar === false);
-    if (velo) velo.hidden = true;
-    botonSidebar?.setAttribute("aria-expanded", String(prefs.sidebar !== false));
+const principal = document.querySelector(".principal");
+const pantallaMovil = window.matchMedia("(max-width: 900px)");
+let sidebarMovilAbierta = false;
+let eraMovil = pantallaMovil.matches;
+
+function aplicarSidebar({ enfocar = false, restaurarFoco = false } = {}) {
+  const movil = pantallaMovil.matches;
+  // Al cruzar el breakpoint, nunca heredar una superposición móvil abierta.
+  if (movil !== eraMovil) sidebarMovilAbierta = false;
+  eraMovil = movil;
+  const abierta = movil ? sidebarMovilAbierta : prefs.sidebar !== false;
+  const superpuesta = movil && abierta;
+  const focoEnSidebar = sidebar.contains(document.activeElement);
+  const focoEnDisparo = document.activeElement === botonSidebar;
+
+  aplicacion.classList.toggle("sidebar-abierta", superpuesta);
+  aplicacion.classList.toggle("sidebar-plegada", !movil && !abierta);
+  document.documentElement.classList.toggle("menu-superpuesto", superpuesta);
+  velo.hidden = !superpuesta;
+  botonSidebar.hidden = abierta;
+  botonSidebar.setAttribute("aria-expanded", String(abierta));
+
+  // Liberar el fondo antes de devolverle el foco al cerrar.
+  if (!superpuesta) {
+    principal.inert = false;
+    principal.removeAttribute("aria-hidden");
+  }
+  if (abierta) {
+    sidebar.inert = false;
+    sidebar.removeAttribute("aria-hidden");
+    if (enfocar || focoEnDisparo) {
+      (sidebar.querySelector('[aria-current="page"]') || cerrarSidebar).focus({ preventScroll: true });
+    }
   } else {
-    aplicacion.classList.remove("sidebar-plegada");
-    const abierta = aplicacion.classList.contains("sidebar-abierta");
-    botonSidebar?.setAttribute("aria-expanded", String(abierta));
-    if (velo) velo.hidden = !abierta;
+    if (focoEnSidebar || restaurarFoco) botonSidebar.focus({ preventScroll: true });
+    sidebar.inert = true;
+    sidebar.setAttribute("aria-hidden", "true");
+  }
+  if (superpuesta) {
+    sidebar.setAttribute("role", "dialog");
+    sidebar.setAttribute("aria-modal", "true");
+    principal.inert = true;
+    principal.setAttribute("aria-hidden", "true");
+  } else {
+    sidebar.removeAttribute("role");
+    sidebar.removeAttribute("aria-modal");
   }
 }
 
-function abrirSidebarMovil(abrir) {
-  if (!aplicacion) return;
-  aplicacion.classList.toggle("sidebar-abierta", abrir);
-  if (velo) velo.hidden = !abrir;
-  botonSidebar?.setAttribute("aria-expanded", String(abrir));
-  if (abrir) {
-    setTimeout(() => sidebar?.querySelector(".nav-enlace")?.focus(), 60);
+function fijarSidebar(abierta) {
+  if (pantallaMovil.matches) {
+    sidebarMovilAbierta = abierta;
+    aplicarSidebar({ enfocar: abierta, restaurarFoco: !abierta });
+  } else {
+    guardarPrefs({ sidebar: abierta });
+    aplicarSidebar({ enfocar: abierta, restaurarFoco: !abierta });
+  }
+}
+
+function cerrarSidebarMovil() {
+  if (sidebarMovilAbierta) fijarSidebar(false);
+}
+
+function contenerFocoSidebar(evento) {
+  if (evento.key !== "Tab" || evento.ctrlKey || evento.altKey || evento.metaKey) return;
+  const enfocables = [...sidebar.querySelectorAll('a[href], button:not(:disabled)')]
+    .filter((nodo) => nodo.tabIndex >= 0 && nodo.getClientRects().length);
+  const primero = enfocables[0];
+  const ultimo = enfocables.at(-1);
+  const activo = document.activeElement;
+  if (!primero || (evento.shiftKey && (activo === primero || activo === sidebar)) ||
+      (!evento.shiftKey && (activo === ultimo || activo === sidebar))) {
+    evento.preventDefault();
+    (evento.shiftKey ? ultimo : primero)?.focus();
   }
 }
 
@@ -142,21 +194,10 @@ function construirNav() {
     }
     nav.append(bloque);
   }
-  nav.addEventListener("click", (evento) => {
-    if (evento.target.closest(".nav-enlace") && window.innerWidth <= 900) abrirSidebarMovil(false);
+  sidebar.addEventListener("click", (evento) => {
+    if (evento.defaultPrevented || evento.button !== 0 || evento.ctrlKey || evento.metaKey || evento.altKey || evento.shiftKey) return;
+    if (evento.target.closest('a[href^="#/"]')) cerrarSidebarMovil();
   });
-  const pie = el(
-    "div",
-    { class: "nav-grupo" },
-    el("p", { class: "nav-grupo__titulo" }, "Sistema"),
-    el(
-      "a",
-      { class: "nav-enlace", href: "#/ajustes", "data-vista": "ajustes", title: "Apariencia, formato y datos" },
-      el("span", { class: "nav-enlace__icono" }, icono("ajustes", { tamano: 18 })),
-      el("span", { class: "nav-enlace__texto" }, "Ajustes")
-    )
-  );
-  nav.append(pie);
 }
 
 function marcarNav(vista) {
@@ -223,6 +264,7 @@ function panelError(error, vista) {
 }
 
 async function renderRuta(forzar = false) {
+  cerrarSidebarMovil();
   let { vista, parametro } = parsearHash();
   if (!vistaValida(vista)) {
     history.replaceState(null, "", "#/inicio");
@@ -293,7 +335,7 @@ function normalizar(texto) {
 
 async function construirIndice() {
   const items = [];
-  for (const clave of [...ORDEN_VISTAS, "ajustes"]) {
+  for (const clave of ORDEN_VISTAS) {
     const vista = VISTAS[clave];
     if (!vista) continue;
     items.push({ tipo: "Sección", titulo: vista.titulo, descripcion: vista.descripcion, ruta: clave, icono: vista.icono, palabras: vista.palabras });
@@ -308,7 +350,7 @@ async function construirIndice() {
     items.push({
       tipo: "Distribución",
       titulo: d.nombre,
-      descripcion: `${d.discreta ? "Discreta" : "Continua"} · ${d.categoria}`,
+      descripcion: `${d.discreta ? "Discreta" : "Continua"}${d.dimensionalidad && d.dimensionalidad !== "univariante" ? " · multivariante" : ""}`,
       ruta: `distribuciones/${d.clave}`,
       icono: "distribuciones",
       palabras: `${d.clave} ${d.nombre} ${d.categoria} distribucion modelo`,
@@ -338,7 +380,6 @@ async function construirIndice() {
   }
   items.push(
     { tipo: "Acción", titulo: "Cambiar tema", descripcion: "Claro, oscuro o sistema", accion: "tema", icono: "sol", palabras: "tema oscuro claro apariencia" },
-    { tipo: "Acción", titulo: "Abrir preferencias", descripcion: "Formato, datos y privacidad", ruta: "ajustes", icono: "ajustes", palabras: "ajustes preferencias formato decimales" },
     { tipo: "Acción", titulo: "Ver atajos y ayuda", descripcion: "Cómo funciona AmPu", accion: "ayuda", icono: "ayuda", palabras: "ayuda atajos teclado" }
   );
   return items;
@@ -346,6 +387,7 @@ async function construirIndice() {
 
 async function abrirPaleta() {
   if (paletaAbierta || document.querySelector("#raiz-modal dialog[open]")) return;
+  cerrarSidebarMovil();
   paletaAbierta = true;
   const entrada = el("input", {
     type: "search",
@@ -491,46 +533,16 @@ async function abrirPaleta() {
 /* Ayuda                                                               */
 /* ------------------------------------------------------------------ */
 
-function abrirAyuda() {
-  if (document.querySelector("#raiz-modal dialog[open]")) return;
-  const atajos = el(
-    "div",
-    { class: "lista-atajos" },
-    ATAJOS.map((atajo) =>
-      el(
-        "div",
-        { class: "atajo-fila" },
-        el("span", {}, atajo.texto),
-        el("span", { class: "teclas" }, atajo.teclas.map((t) => el("kbd", {}, t)))
-      )
-    )
-  );
-  modal({
-    titulo: "Ayuda y atajos",
-    subtitulo: "AmPu funciona sin conexión y no envía tus datos a ningún servidor externo.",
-    contenido: el(
-      "div",
-      { class: "pila" },
-      el(
-        "div",
-        { class: "rejilla rejilla--2" },
-        el(
-          "section",
-          { class: "pila pila--sm" },
-          el("h3", { class: "ayuda__titulo" }, "Cómo funciona"),
-          el("p", { class: "texto-articulo" }, "1. Elige una sección en el menú o con Ctrl K. 2. Ajusta los parámetros y ejecuta el cálculo. 3. Lee el resultado, sus supuestos y los enlaces a la teoría."),
-          el("p", { class: "texto-articulo" }, "El botón de tema cambia entre claro, oscuro y sistema. Las preferencias se guardan en este navegador y puedes exportarlas desde Ajustes.")
-        ),
-        el("section", { class: "pila pila--sm" }, el("h3", { class: "ayuda__titulo" }, "Atajos"), atajos)
-      ),
-      el("p", { class: "texto-tenue texto-pequeno" }, "Los cálculos se ejecutan en el servidor local de Python que acompaña a esta interfaz. Ninguna muestra ni preferencia sale de tu equipo.")
-    ),
-    acciones: [
-      { texto: "Abrir preferencias", variante: "secundario", onClick: () => setTimeout(() => navegar("ajustes"), 80) },
-      { texto: "Explorar la teoría", variante: "secundario", onClick: () => setTimeout(() => navegar("teoria"), 80) },
-      { texto: "Entendido", variante: "primario" },
-    ],
-  });
+async function abrirAyuda() {
+  if (document.querySelector("dialog[open]")) return;
+  cerrarSidebarMovil();
+  try {
+    const { abrirAyuda: mostrarAyuda } = await import("./ayuda.js");
+    mostrarAyuda();
+  } catch (error) {
+    console.error("No se pudo abrir la ayuda", error);
+    toast("No se pudo abrir la ayuda. Inténtalo de nuevo.", { tipo: "error" });
+  }
 }
 
 /* ------------------------------------------------------------------ */
@@ -538,26 +550,9 @@ function abrirAyuda() {
 /* ------------------------------------------------------------------ */
 
 function conectarEventos() {
-  botonSidebar?.addEventListener("click", () => {
-    if (window.innerWidth <= 900) {
-      abrirSidebarMovil(!aplicacion.classList.contains("sidebar-abierta"));
-    } else {
-      const plegada = aplicacion.classList.toggle("sidebar-plegada");
-      botonSidebar.setAttribute("aria-expanded", String(!plegada));
-      guardarPrefs({ sidebar: !plegada }, { silencioso: true });
-    }
-  });
-
-  cerrarSidebar?.addEventListener("click", () => {
-    if (window.innerWidth <= 900) {
-      abrirSidebarMovil(false);
-    } else {
-      aplicacion.classList.add("sidebar-plegada");
-      botonSidebar?.setAttribute("aria-expanded", "false");
-      guardarPrefs({ sidebar: false }, { silencioso: true });
-    }
-  });
-  velo?.addEventListener("click", () => abrirSidebarMovil(false));
+  botonSidebar.addEventListener("click", () => fijarSidebar(true));
+  cerrarSidebar.addEventListener("click", () => fijarSidebar(false));
+  velo.addEventListener("click", cerrarSidebarMovil);
 
   document.getElementById("alternar-tema")?.addEventListener("click", () => {
     const siguiente = cicloTema();
@@ -567,54 +562,55 @@ function conectarEventos() {
 
   document.getElementById("abrir-buscador")?.addEventListener("click", abrirPaleta);
 
-  for (const id of ["boton-ayuda", "pie-ayuda"]) {
-    document.getElementById(id)?.addEventListener("click", abrirAyuda);
-  }
-  document.getElementById("pie-preferencias")?.addEventListener("click", () => navegar("ajustes"));
+  document.getElementById("boton-ayuda")?.addEventListener("click", abrirAyuda);
   window.addEventListener("ampu:ayuda", abrirAyuda);
 
   document.addEventListener("keydown", (evento) => {
     const objetivo = evento.target;
-    const escribiendo = objetivo instanceof HTMLElement && (objetivo.matches("input, textarea, select") || objetivo.isContentEditable);
-    const conModificador = evento.ctrlKey || evento.metaKey;
+    const dialogoAbierto = Boolean(document.querySelector("dialog[open]"));
+    if (!dialogoAbierto && !evento.defaultPrevented && !evento.isComposing && !evento.repeat) {
+      if (sidebarMovilAbierta) contenerFocoSidebar(evento);
+      if (evento.key === "Escape" && !evento.ctrlKey && !evento.metaKey && !evento.altKey && !evento.shiftKey &&
+          (sidebarMovilAbierta || sidebar.contains(objetivo))) {
+        evento.preventDefault();
+        fijarSidebar(false);
+        return;
+      }
+    }
+    const escribiendo = objetivo instanceof HTMLElement && (objetivo.matches("input, textarea, select") || objetivo.isContentEditable || Boolean(objetivo.closest('[role="textbox"]')));
+    const accion = accionAtajo(evento, {
+      escribiendo,
+      dialogoAbierto: dialogoAbierto || sidebarMovilAbierta,
+    });
 
-    if (conModificador && evento.key.toLocaleLowerCase("es") === "k") {
+    if (accion === "buscar") {
       evento.preventDefault();
       abrirPaleta();
-      return;
-    }
-    if (conModificador && evento.key === "Enter") {
-      const primario = [...document.querySelectorAll('[data-accion-primaria="true"]')].find((n) => n.offsetParent !== null && !n.disabled);
+    } else if (accion === "calcular") {
+      const disponibles = [...contenido.querySelectorAll('[data-accion-primaria="true"]')]
+        .filter((n) => n.offsetParent !== null && !n.disabled);
+      const formulario = objetivo instanceof Element ? objetivo.closest("form, .panel") : null;
+      const primario = disponibles.find((n) => formulario?.contains(n)) || disponibles[0];
       if (primario) {
         evento.preventDefault();
         primario.click();
       }
-      return;
-    }
-    if (conModificador && evento.shiftKey && evento.key.toLocaleLowerCase("es") === "l") {
+    } else if (accion === "tema") {
       evento.preventDefault();
       const siguiente = cicloTema();
       pintarIconoTema();
       anunciar(`Tema ${siguiente === "sistema" ? "del sistema" : siguiente}.`);
-      return;
-    }
-    if ((evento.key === "?" && !escribiendo && !conModificador) || evento.key === "F1") {
+    } else if (accion === "ayuda") {
       evento.preventDefault();
       abrirAyuda();
-      return;
-    }
-    // Esc cancela el cálculo en curso (si no hay un diálogo abierto, que tiene prioridad).
-    if (evento.key === "Escape" && hayCalculosEnCurso() && !document.querySelector("dialog[open]")) {
-      const cancelados = cancelarCalculos();
-      if (cancelados) {
+    } else if (accion === "escape") {
+      // El diálogo nativo y los gráficos tienen prioridad sobre los atajos globales.
+      if (hayCalculosEnCurso() && cancelarCalculos()) {
         evento.preventDefault();
         toast("Cálculo cancelado.", { tipo: "info" });
         anunciar("Cálculo cancelado.");
-        return;
       }
-    }
-    // Alt+G lleva el foco al primer gráfico visible (desde ahí: flechas, +, −, 0).
-    if (evento.altKey && !conModificador && evento.key.toLocaleLowerCase("es") === "g") {
+    } else if (accion === "grafico") {
       const grafico = [...document.querySelectorAll(".grafico svg[tabindex]")].find((n) => n.getBoundingClientRect().width > 0);
       if (grafico) {
         evento.preventDefault();
@@ -622,15 +618,11 @@ function conectarEventos() {
         grafico.scrollIntoView({ behavior: comportamientoScroll(), block: "center" });
         anunciar("Gráfico. Flechas para recorrer los valores; más y menos para el zoom; cero para restablecer.");
       }
-      return;
-    }
-    if (evento.key === "Escape" && aplicacion?.classList.contains("sidebar-abierta")) {
-      abrirSidebarMovil(false);
     }
   });
 
   window.addEventListener("hashchange", () => renderRuta());
-  window.addEventListener("resize", () => aplicarSidebar());
+  pantallaMovil.addEventListener("change", () => aplicarSidebar());
 
   window.addEventListener("ampu:prefs", () => {
     pintarIconoTema();
@@ -656,12 +648,13 @@ function conectarEventos() {
 
 async function iniciar() {
   hidratarIconos();
-  await inicializarPreferencias();
-  pintarIconoTema();
-  aplicarMovimiento();
   construirNav();
   aplicarSidebar();
   conectarEventos();
+  await inicializarPreferencias();
+  pintarIconoTema();
+  aplicarMovimiento();
+  aplicarSidebar();
 
   const { vista, parametro } = parsearHash();
   if (!vistaValida(vista)) {

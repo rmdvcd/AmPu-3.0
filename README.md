@@ -13,7 +13,15 @@ por una arquitectura modular:
 
 - **Shell accesible** con navegación por hash, migas, barra lateral colapsable,
   paleta de comandos (`Ctrl K`), ayuda (`?`), temas claro/oscuro/sistema y
-  preferencias persistentes.
+  preferencias persistentes. El menú se abre desde la izquierda; el disparador
+  desaparece al abrirlo y se cierra con la X. En móvil bloquea el fondo,
+  contiene el foco y se cierra también con Esc, el velo o la navegación.
+- **Centro de ayuda** de carga diferida con guía rápida, ejemplos de entrada y
+  atajos agrupados con búsqueda por acción o tecla. Distingue combinaciones de
+  alternativas y usa únicamente combinaciones de **Windows** (`Ctrl`, `Alt`,
+  `Shift`), sin remapeos de plataforma ni activación con Meta. Pestañas
+  accesibles, foco restaurado al cerrar y diseño para móvil y escritorio en
+  ambos temas. La lista de atajos vive solo en Ayuda, no se repite en Ajustes.
 - **10 vistas** en módulos independientes: inicio, distribuciones, descriptiva,
   probabilidad, inferencia, regresión, muestreo, simulación, teoría y ajustes.
 - **26 distribuciones**, **13 pruebas de hipótesis**, **7 diseños de muestreo**,
@@ -28,8 +36,9 @@ por una arquitectura modular:
 - **Contraste en ambos temas**: texto, ayudas, placeholders, controles e
   indicadores de carga con colores propios de cada variante. El cambio de tema
   aplica fondo y tinta juntos, sin interpolar colores incompatibles.
-- **Icono original de AmPu 2.0** en la marca lateral, los favicons y el
-  empaquetado de Windows, conservando proporción, transparencia y colores.
+- **Identidad simplificada** y legible a tamaño pequeño en la barra lateral,
+  los diálogos, la pestaña y el ejecutable. El arranque de escritorio añade una
+  bandeja nativa de Windows con opciones para abrir y salir de AmPu.
 
 El detalle del rediseño está en
 [`README_REDISEÑO_AMPU_3_0.md`](README_REDISEÑO_AMPU_3_0.md). La auditoría de la
@@ -82,7 +91,10 @@ Arranque de escritorio, que abre el navegador cuando el motor ya responde:
 PYTHONPATH=vendor python3 main.py
 ```
 
-Variables útiles: `AMPU_HOST`, `PORT` y `AMPU_NO_BROWSER=1`.
+Variables útiles: `AMPU_HOST`, `PORT`, `AMPU_NO_BROWSER=1` y `AMPU_NO_TRAY=1`.
+En Windows, este arranque muestra una bandeja propia con «Abrir AmPu» y
+«Salir de AmPu». Cerrar la pestaña no detiene el motor; usa la opción de salida
+de la bandeja. `python app.py` solo inicia el servidor, sin bandeja.
 
 La aplicación se sirve con Waitress. Por seguridad solo atiende peticiones
 dirigidas a `127.0.0.1`/`localhost` y no se deja incrustar en otras páginas. Si
@@ -99,6 +111,7 @@ la publicas detrás de un proxy o con otro nombre:
 .
 ├── app.py                  # Servidor Flask, API JSON y exportaciones
 ├── main.py                 # Arranque de escritorio
+├── escritorio.py           # Identidad y bandeja nativa de Windows
 ├── build_exe.py            # Empaquetado real con PyInstaller
 ├── requirements.txt        # Dependencias de ejecución
 ├── requirements-build.txt  # + PyInstaller, solo para el ejecutable
@@ -109,9 +122,12 @@ la publicas detrás de un proxy o con otro nombre:
 │   └── static/
 │       ├── css/app.css     # Sistema de diseño, componentes y responsive
 │       ├── favicon.svg · favicon.ico
-│       ├── img/icono_ampu.png # Original de AmPu 2.0
+│       ├── img/icono_ampu.svg · icono_ampu.png # Símbolo simplificado
 │       └── js/
-│           ├── app.js      # Router, shell, paleta, ayuda y atajos
+│           ├── app.js      # Router, shell, paleta y eventos globales
+│           ├── ayuda.js    # Centro de ayuda y presentación compartida de atajos
+│           ├── atajos.js   # Búsqueda y resolución de combinaciones de Windows
+│           ├── lectura.js  # Prosa segura, pasos, tablas y fórmulas de las lecciones
 │           ├── ui.js       # Componentes y formato numérico
 │           ├── entrada.js  # Lector de números, series y matrices
 │           ├── api.js      # Cliente HTTP y descargas
@@ -141,6 +157,10 @@ la publicas detrás de un proxy o con otro nombre:
    sistemáticos, estratificados, Neyman, óptimos y por conglomerados con semilla.
 5. **Simular y aprender**: Monte Carlo (π, integrales), muestras, ajuste por
    máxima verosimilitud, QQ-plot y 57 lecciones conectadas con cada herramienta.
+   Cada lección incluye un ejemplo resuelto con cifras de referencia verificadas.
+   La biblioteca y los desplegables de distribuciones conservan listas, énfasis,
+   subíndices y fórmulas; las tablas y expresiones anchas se desplazan dentro
+   del artículo, sin ensanchar la página.
 
 ## API
 
@@ -175,7 +195,7 @@ valores infinitos viajan como `"∞"` y `"−∞"`; muchas respuestas incluyen
 ./scripts/probar.sh          # Python y Node; gráficos si Playwright está instalado
 
 PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=vendor python3 -m unittest discover -s tests -v
-node --test tests/test_*.mjs
+node --test --test-concurrency=1 tests/test_*.mjs
 ```
 
 | Archivo | Qué comprueba |
@@ -184,13 +204,19 @@ node --test tests/test_*.mjs
 | `tests/test_regresiones.py` | Un caso por hallazgo de la auditoría (E1–E19), con su referencia |
 | `tests/test_entrada.py` · `test_entrada.mjs` | Los dos lectores de números contra `vectores_entrada.json` |
 | `tests/test_seguridad.py` | Cabeceras, anfitrión, origen y exportación sin fórmulas |
-| `tests/test_navegacion.py` | Barra lateral sin el bloque inferior duplicado de Ajustes, conservando la marca, la navegación y los accesos globales |
+| `tests/test_navegacion.py` | Shell sin footer global ni controles de menú duplicados, rutas de teoría válidas y semántica de los catálogos |
+| `tests/test_atajos.mjs` | Combinaciones de Windows, rechazo de Meta, búsqueda y prioridad de campos, gráficos y diálogos |
+| `tests/test_navegacion.mjs` | Menú izquierdo sin controles duplicados, foco/inert, persistencia y cambios móvil/escritorio; limpieza de Inicio/Ajustes, campos deshabilitados y regresiones de inferencia y muestreo |
+| `tests/test_ayuda.mjs` | Carga diferida, pestañas y búsqueda, foco, navegación, atajos bloqueados detrás del diálogo y diseño móvil/escritorio en ambos temas |
 | `tests/test_leyendas_exportacion.py` | Leyendas externas sin recortes ni solapamientos en PNG/PDF, con muchas series y nombres largos |
 | `tests/test_graficos.mjs` | Leyendas sin solapamientos a 180, 240, 360 y 760 px, en ambos temas, con nombres largos, zoom, conmutación de series y resumen del diagrama de caja |
 | `tests/test_temas.mjs` | Contraste calculado de texto (≥ 4,5:1), controles y gráficos (≥ 3:1), hover/foco/carga real, placeholders, avisos, series ocultas, fotogramas del cambio de tema, sistema y persistencia |
-| `tests/test_icono.py` | PNG original idéntico al de AmPu 2.0, favicons, tamaños y transparencia del ICO, regeneración local y comando de PyInstaller con el icono incluido (sin compilar el ejecutable) |
+| `tests/test_icono.py` | Identidad vectorial simplificada, PNG y nueve tamaños ICO, transparencia, regeneración determinista y recursos/comandos de PyInstaller (sin compilar el ejecutable) |
+| `tests/test_escritorio.py` | Salud antes de abrir el navegador, identidad Windows, recursos `_MEIPASS`, menú abrir/salir, vigilancia del servidor y respaldo de consola; backend nativo simulado |
+| `tests/test_teoria.py` · `ejemplos_teoria.json` | Un caso numérico por cada una de las 57 lecciones, corrección finita y dos etapas; Markdown completo, TOC y subíndices sin recortes |
+| `tests/test_lectura.mjs` | Todas las fórmulas con KaTeX real; iconos, HTML seguro, pasos y tablas/fórmulas desplazables por teclado; diálogos, buscador y páginas independientes en ambos temas y tamaños de pantalla |
 
-Las comprobaciones de gráficos y temas usan Chromium real y son opcionales; si
+Las comprobaciones de navegación, ayuda, lectura, gráficos y temas usan Chromium real y son opcionales; si
 no está instalado `playwright-core`, se marcan como omitidas sin afectar a las
 pruebas del motor. Para activarlas (solo desarrollo, sin dependencias nuevas
 para ejecutar AmPu):
@@ -198,7 +224,7 @@ para ejecutar AmPu):
 ```bash
 npm install --no-save --package-lock=false playwright-core
 npx playwright-core install chromium
-node --test tests/test_graficos.mjs tests/test_temas.mjs
+node --test --test-concurrency=1 tests/test_navegacion.mjs tests/test_ayuda.mjs tests/test_lectura.mjs tests/test_graficos.mjs tests/test_temas.mjs
 ```
 
 No necesitan arrancar la app: sirven los componentes estáticos en servidores de
@@ -225,15 +251,35 @@ En Windows genera `dist/ampu_portable_3_0.exe`; en Linux/macOS, un ejecutable si
 extensión. El ejecutable incluye `frontend/`, `engine/` y las dependencias; el
 navegador se abre solo cuando `/api/salud` responde.
 
+### Identidad y bandeja de Windows
+
 El icono del `.exe` se incorpora con `--icon` al **recompilar en Windows**;
-no modifica ejecutables ya generados. Se usa el original de AmPu 2.0, también
-visible en la barra lateral y en los favicons. Su procedencia y hashes están en
-[`frontend/static/img/README.md`](frontend/static/img/README.md). Para regenerar
-el SVG autocontenido y el ICO multirresolución, sin descargas:
+no modifica ejecutables ya generados. El SVG de la barra lateral, los diálogos,
+la pestaña del navegador, el PNG de bandeja y el ICO del ejecutable comparten
+el nuevo símbolo simplificado. Consulta
+[`frontend/static/img/README.md`](frontend/static/img/README.md).
 
 ```bash
 PYTHONPATH=vendor python3 scripts/generar_iconos.py
 ```
+
+El ejecutable de Windows se construye sin consola e incluye `pystray._win32`.
+Si la bandeja falla o se desactiva, AmPu intenta abrir una consola de respaldo.
+El icono de bandeja desaparece al salir o si el servidor deja de funcionar.
+La identidad `AmPu.Laboratorio.3` pertenece al proceso de AmPu: **no sustituye
+el icono nativo ni la agrupación de ventanas del navegador predeterminado**.
+
+Comprobación manual necesaria en Windows después de recompilar:
+
+1. Abrir el ejecutable y revisar su icono, la pestaña y los diálogos de la app.
+2. Verificar la bandeja a escala 100 %, 125 % y 150 %, abrir su menú y recuperar
+   la app después de cerrar la pestaña.
+3. Usar «Salir de AmPu» y comprobar que desaparecen el icono y el proceso y que
+   el puerto vuelve a estar disponible.
+4. Probar `AMPU_NO_TRAY=1` y la recuperación tras reiniciar Explorer.
+
+Las pruebas de Linux validan recursos, comandos y contratos simulados; no
+certifican el comportamiento nativo de la barra de tareas o de Explorer.
 
 ## Privacidad y alcance
 

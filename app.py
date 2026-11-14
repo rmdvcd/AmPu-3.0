@@ -92,10 +92,9 @@ from ampu.core.muestreo import aleatorio as muestreo_aleatorio  # noqa: E402
 from ampu.core.muestreo.diseno import ejecutar_diseno  # noqa: E402
 from ampu.core.simulacion import montecarlo  # noqa: E402
 from ampu.core.validacion import validar_nivel  # noqa: E402
-from ampu.docs.teoria import leer_teoria, listar_teoria  # noqa: E402
+from ampu.docs.teoria import convertir_markdown, leer_teoria, listar_teoria  # noqa: E402
 from ampu.io.servicio import ServicioExportacion  # noqa: E402
 
-import markdown  # noqa: E402
 
 VERSION_APP = "3.2.0"
 DOCS_DIR = ENGINE_DIR / "ampu" / "docs"
@@ -482,26 +481,6 @@ def _slug(texto: str) -> str:
     return normal or "seccion"
 
 
-def _preservar_matematicas(texto: str) -> tuple[str, dict[str, str]]:
-    """Aparta fórmulas antes de interpretar Markdown, conservando delimitadores."""
-    tokens: dict[str, str] = {}
-
-    def bloque(m):
-        clave = f"AMPUBLOCKTOKEN{len(tokens)}END"
-        tokens[clave] = '<div class="formula-bloque">$$' + m.group(1).replace("<", "&lt;").replace(">", "&gt;") + "$$</div>"
-        return f"\n\n{clave}\n\n"
-
-    texto = re.sub(r"^\$\$\s*\n(.*?)\n\$\$\s*$", bloque, texto, flags=re.M | re.S)
-
-    def linea(m):
-        clave = f"AMPUINLINETOKEN{len(tokens)}END"
-        tokens[clave] = '<span class="formula-linea">$' + m.group(1).replace("<", "&lt;").replace(">", "&gt;") + "$</span>"
-        return clave
-
-    texto = re.sub(r"(?<!\$)\$(?!\$)(.+?)(?<!\$)\$(?!\$)", linea, texto)
-    return texto, tokens
-
-
 @lru_cache(maxsize=128)
 def _texto_leccion(clave: str) -> str | None:
     ruta = TEORIA_DIR / f"{clave}.md"
@@ -519,7 +498,8 @@ def _seccion(texto: str, titulo: str) -> str:
 def _limpiar_markdown(texto: str) -> str:
     texto = re.sub(r"!\[[^\]]*\]\([^)]*\)", "", texto)
     texto = re.sub(r"\*\*(.+?)\*\*", r"\1", texto)
-    texto = re.sub(r"[`*_]", "", texto)
+    # No borrar los subíndices de LaTeX ni de nombres como mu_x.
+    texto = re.sub(r"[`*]", "", texto)
     texto = re.sub(r"\s+", " ", texto)
     return texto.strip()
 
@@ -536,15 +516,17 @@ def _info_leccion(clave: str) -> dict:
     formula_m = re.search(r"\$\$(.+?)\$\$", texto, re.S)
     formula = formula_m.group(1).strip() if formula_m else None
     ejemplo = _seccion(texto, "Ejemplo resuelto, paso a paso")
-    propiedades = _seccion(texto, "Propiedades y casos especiales")
+    propiedades = _seccion(texto, "Propiedades y casos especiales").split("\n![", 1)[0].strip()
     palabras = len(re.findall(r"\w+", _limpiar_markdown(texto)))
     return {
         "clave": clave,
         "titulo": titulo,
         "resumen": _limpiar_markdown(definicion)[:420],
         "formula": formula,
-        "ejemplo": _limpiar_markdown(ejemplo)[:700],
-        "propiedades": _limpiar_markdown(propiedades)[:420],
+        "ejemplo": _limpiar_markdown(ejemplo),
+        "ejemplo_html": convertir_markdown(ejemplo, imagenes_web=True)[0],
+        "propiedades": _limpiar_markdown(propiedades),
+        "propiedades_html": convertir_markdown(propiedades, imagenes_web=True)[0],
         "minutos": max(1, round(palabras / 190)),
     }
 
@@ -613,6 +595,8 @@ def _meta_distribucion(clave: str) -> dict:
         "resumen": info.get("resumen", ""),
         "propiedades": info.get("propiedades", ""),
         "ejemplo": info.get("ejemplo", ""),
+        "ejemplo_html": info.get("ejemplo_html", ""),
+        "propiedades_html": info.get("propiedades_html", ""),
         "imagen": f"/media/teoria/{clave}.png" if (IMAGENES_DIR / f"{clave}.png").is_file() else None,
         "x_sugerido": _sugerir_evento(modelo),
         "soporte_sugerido": soporte,
@@ -751,11 +735,13 @@ CATALOGO_PRUEBAS = [
         "h0": "p = p₀", "h1": "p ≠ p₀",
         "admite_alternativa": True,
         "h1_alternativas": {"two-sided": "p ≠ p₀", "less": "p < p₀", "greater": "p > p₀"},
-        "supuestos": "Aproximación normal: n·p₀ ≥ 5 y n·(1−p₀) ≥ 5.",
+        "supuestos": "Ensayos independientes con la misma probabilidad de éxito. Usa la aproximación normal si n·p₀ ≥ 5 y n·(1−p₀) ≥ 5; en otro caso, binomial exacta.",
         "campos": [
             _campo("exitos", "Éxitos observados", "entero", default=48, min=0),
             _campo("n", "Tamaño de muestra n", "entero", default=100, min=1),
-            _campo("p0", "Proporción nula p₀", "numero", default=0.4, min=0, max=1, step=0.01),
+            _campo("p0", "Proporción nula p₀", "numero", default=0.4, min=0, max=1,
+                   incluir_minimo=False, incluir_maximo=False, step=0.01,
+                   ayuda="Usa 0 < p₀ < 1; no se admiten los extremos 0 y 1."),
         ],
         "teoria": "prueba_proporcion_una",
     },
@@ -781,7 +767,7 @@ CATALOGO_PRUEBAS = [
         "admite_alternativa": False,
         "supuestos": "Frecuencias esperadas ≥ 5 en la mayoría de celdas; observaciones independientes.",
         "campos": [
-            _campo("tabla", "Tabla de contingencia", "matriz", ejemplo="30 20\n15 35", ayuda="Una fila por línea; separa columnas con espacios, comas o tabuladores."),
+            _campo("tabla", "Tabla de contingencia", "matriz", ejemplo="30 20\n15 35", ayuda="Una fila por línea; separa columnas con espacios, punto y coma o tabuladores."),
         ],
         "teoria": "chi_independencia",
     },
@@ -1216,15 +1202,15 @@ def api_descriptiva():
         forma = ("La muestra es demasiado pequeña (o no varía) para valorar su forma."
                  if con_variacion else "Todos los valores son iguales: no hay dispersión que describir.")
     elif sesgo > 0.5:
-        forma = "Su distribución es asimétrica a la derecha: la media supera a la mediana y la cola derecha es más larga."
+        forma = "La asimetría muestral es positiva, lo que sugiere una cola más prolongada a la derecha. Contrástalo con el histograma."
     elif sesgo < -0.5:
-        forma = "Su distribución es asimétrica a la izquierda: la media es menor que la mediana y la cola izquierda es más larga."
+        forma = "La asimetría muestral es negativa, lo que sugiere una cola más prolongada a la izquierda. Contrástalo con el histograma."
     else:
-        forma = "Su distribución es aproximadamente simétrica: media y mediana son cercanas."
+        forma = "La asimetría muestral está cerca de cero. Esto no demuestra simetría ni normalidad: revisa también la forma del histograma."
     if curtosis is not None and abs(curtosis) > 1:
-        forma += (" El exceso de curtosis es positivo: colas más pesadas que las de una normal."
+        forma += (" El exceso de curtosis muestral es positivo, compatible con mayor peso en valores extremos que en una normal."
                   if curtosis > 0 else
-                  " El exceso de curtosis es negativo: colas más ligeras que las de una normal.")
+                  " El exceso de curtosis muestral es negativo, compatible con menor peso en valores extremos que en una normal.")
     if len(x) < 20 and sesgo is not None:
         forma += " Con menos de 20 datos, sesgo y curtosis son estimaciones muy inestables."
 
@@ -2158,7 +2144,7 @@ def api_simulacion():
             "teoricos": [_valor(v) for v in teoricos],
             "observados": [_valor(v) for v in observados],
             "n": int(len(x)),
-            "nota": "Si los puntos siguen aproximadamente una recta, el modelo describe bien la muestra.",
+            "nota": "Una alineación aproximada sugiere compatibilidad de forma; por sí sola no demuestra que los datos sigan el modelo.",
         })
 
     raise ErrorPeticion("Tipo de simulación desconocido.", campo="tipo")
@@ -2180,13 +2166,7 @@ def _render_leccion(clave: str) -> dict | None:
         return None
     lineas = texto.splitlines()
     titulo = lineas[0].lstrip("# ").strip() if lineas else clave
-    preparado, tokens = _preservar_matematicas(texto)
-    conversor = markdown.Markdown(extensions=["tables", "fenced_code", "toc", "sane_lists"], output_format="html5")
-    html = conversor.convert(preparado)
-    for token, fragmento in tokens.items():
-        html = html.replace(f"<p>{token}</p>", fragmento).replace(token, fragmento)
-    html = html.replace('src="../imagenes/', 'src="/media/teoria/')
-    html = html.replace('<table>', '<div class="tabla-scroll"><table>').replace('</table>', '</table></div>')
+    html, conversor = convertir_markdown(texto, imagenes_web=True)
 
     def _toc(items, nivel=0):
         salida = []

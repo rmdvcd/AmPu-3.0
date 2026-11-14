@@ -2,16 +2,14 @@
 
 ## Definición formal
 
-Distribución de colas muy pesadas, centrada en $x_0$ y de escala $\gamma$. En AmPu 3.1 se parametriza exactamente como en `scipy.stats`;
-los eventos fuera del soporte reciben masa/densidad 0.
+Distribución de colas muy pesadas, centrada en $x_0$ y de escala $\gamma$.
 
 ## Parámetros y rango
 
-| Parámetro | Significado | Rango | Valor de ejemplo |
+| Parámetro | Significado | Valores admitidos | Ejemplo |
 |---|---|---|---|
-| `centro` | Ubicación x₀ | sin límite; sin límite | `0.0` |
-| `escala` | Escala γ | > 0; sin límite | `1.0` |
-
+| `centro` | Ubicación x₀ | Real finito | 0 |
+| `escala` | Escala γ | > 0 | 1 |
 
 ## Función de densidad (PDF)
 
@@ -25,41 +23,28 @@ $$
 F(x)=\frac12+\frac1\pi\arctan\left(\frac{x-x_0}{\gamma}\right)
 $$
 
-En general, la CDF es $F(x)=P(X\le x)$. Para una variable continua,
-$P(a\le X\le b)=F(b)-F(a)$; para una discreta los extremos se incluyen
-según los saltos de su CDF. Para una cola superior, consulte la función de supervivencia; no sume densidades continuas.
+La acumulada es $F(x)=P(X\le x)$. Para un intervalo, $P(a\le X\le b)=F(b)-F(a)$. La densidad $f(x)$ no es una probabilidad puntual: $P(X=x)=0$.
 
 ## Media, varianza y desviación estándar
 
 $$
-\operatorname{E}[X]=\text{indefinida}
+\begin{aligned}\operatorname{E}[X]&=\text{indefinida}\\[4pt]\operatorname{Var}(X)&=\text{indefinida}\\[4pt]\sigma_X&=\text{indefinida}\end{aligned}
 $$
-
-$$
-\operatorname{Var}(X)=\text{indefinida}
-$$
-
-$$
-\sigma_X=\sqrt{\operatorname{Var}(X)}
-$$
-
-En modelos multivariados los momentos anteriores son **por componente**.
-Si el momento no existe, la desviación tampoco está definida.
 
 ## Propiedades y casos especiales
 
-Ni la media ni la desviación están definidas; SciPy devuelve NaN. Su mediana es $x_0$. Es t de Student con un grado de libertad.
+Ni la media ni la desviación están definidas. Su mediana es $x_0$. La Cauchy estándar coincide con la t de Student con un grado de libertad.
 
 ![Representación de Cauchy](../imagenes/cauchy.png)
 
-*Figura 1. Curva teórica o primera marginal ilustrativa para Cauchy; no sustituye a la densidad conjunta de un modelo multivariante.*
+*Figura 1. Cauchy: representación ilustrativa de la función de densidad.*
 
 ## Ejemplo resuelto, paso a paso
 
-1. Configure `centro=0.0`, `escala=1.0` y el evento $x=1$.
-2. Sustituya los parámetros en la fórmula de densidad (PDF); obtenga densidad (no probabilidad puntual) **0.159155**.
-3. Evalúe la CDF en ese mismo evento: **0.75**. Para una cola superior, consulte la función de supervivencia; no sume densidades continuas.
-4. Interprete unidades y soporte antes de comunicar el resultado; la UI conserva todos los decimales internos.
+1. **Datos.** Usa `centro` = 0, `escala` = 1 y evalúa el punto $x=1$.
+2. **Sustitución.** $f(1)=1/(2\pi)$. La densidad es **0,159155**.
+3. **Acumulada.** $F(1)=P(X\le 1)$ ≈ **0,75**.
+4. **Interpretación.** La probabilidad de no superar 1 es aproximadamente 75 %. Para una probabilidad entre dos puntos, resta sus acumuladas.
 
 ## Referencias
 

@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
+  <title>AmPu</title>
+  <rect x="2" y="2" width="60" height="60" rx="14" fill="#0b4a42"/>
+  <path d="M12 45C24 45 22 18 32 18S40 45 52 45M12 45H52" stroke="#fff" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

@@ -2,16 +2,14 @@
 
 ## Definición formal
 
-Variable positiva cuyo logaritmo natural es normal con media $\mu$ y desviación $\sigma$. En AmPu 3.1 se parametriza exactamente como en `scipy.stats`;
-los eventos fuera del soporte reciben masa/densidad 0.
+Variable positiva cuyo logaritmo natural es normal con media $\mu$ y desviación $\sigma$.
 
 ## Parámetros y rango
 
-| Parámetro | Significado | Rango | Valor de ejemplo |
+| Parámetro | Significado | Valores admitidos | Ejemplo |
 |---|---|---|---|
-| `mu` | Media de log(X) | sin límite; sin límite | `0.0` |
-| `sigma` | Desviación de log(X) | > 0; sin límite | `0.5` |
-
+| `mu` | Media de log(X) | Real finito | 0 |
+| `sigma` | Desviación de log(X) | > 0 | 0,5 |
 
 ## Función de densidad (PDF)
 
@@ -25,26 +23,13 @@ $$
 F(x)=\Phi\left(\frac{\ln x-\mu}{\sigma}\right),\quad x>0
 $$
 
-En general, la CDF es $F(x)=P(X\le x)$. Para una variable continua,
-$P(a\le X\le b)=F(b)-F(a)$; para una discreta los extremos se incluyen
-según los saltos de su CDF. Para una cola superior, consulte la función de supervivencia; no sume densidades continuas.
+La acumulada es $F(x)=P(X\le x)$. Para un intervalo, $P(a\le X\le b)=F(b)-F(a)$. La densidad $f(x)$ no es una probabilidad puntual: $P(X=x)=0$.
 
 ## Media, varianza y desviación estándar
 
 $$
-\operatorname{E}[X]=e^{\mu+\sigma^2/2}
+\begin{aligned}\operatorname{E}[X]&=e^{\mu+\sigma^2/2}\\[4pt]\operatorname{Var}(X)&=(e^{\sigma^2}-1)e^{2\mu+\sigma^2}\\[4pt]\sigma_X&=\sqrt{\operatorname{Var}(X)}\end{aligned}
 $$
-
-$$
-\operatorname{Var}(X)=(e^{\sigma^2}-1)e^{2\mu+\sigma^2}
-$$
-
-$$
-\sigma_X=\sqrt{\operatorname{Var}(X)}
-$$
-
-En modelos multivariados los momentos anteriores son **por componente**.
-Si el momento no existe, la desviación tampoco está definida.
 
 ## Propiedades y casos especiales
 
@@ -52,14 +37,14 @@ La mediana es $e^\mu$, no coincide con la media. Para $x\le0$ la CDF es cero.
 
 ![Representación de Lognormal](../imagenes/lognormal.png)
 
-*Figura 1. Curva teórica o primera marginal ilustrativa para Lognormal; no sustituye a la densidad conjunta de un modelo multivariante.*
+*Figura 1. Lognormal: representación ilustrativa de la función de densidad.*
 
 ## Ejemplo resuelto, paso a paso
 
-1. Configure `mu=0.0`, `sigma=0.5` y el evento $x=1$.
-2. Sustituya los parámetros en la fórmula de densidad (PDF); obtenga densidad (no probabilidad puntual) **0.797885**.
-3. Evalúe la CDF en ese mismo evento: **0.5**. Para una cola superior, consulte la función de supervivencia; no sume densidades continuas.
-4. Interprete unidades y soporte antes de comunicar el resultado; la UI conserva todos los decimales internos.
+1. **Datos.** Usa `mu` = 0, `sigma` = 0,5 y evalúa el punto $x=1$.
+2. **Sustitución.** $f(1)=1/[0{,}5\sqrt{2\pi}]$. La densidad es **0,797885**.
+3. **Acumulada.** $F(1)=P(X\le 1)$ ≈ **0,5**.
+4. **Interpretación.** La probabilidad de no superar 1 es aproximadamente 50 %. Para una probabilidad entre dos puntos, resta sus acumuladas.
 
 ## Referencias
 

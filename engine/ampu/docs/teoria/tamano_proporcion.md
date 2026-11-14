@@ -12,42 +12,32 @@ Planifica precisión de proporciones; el caso conservador si $p$ no se conoce es
 | `d` | Error absoluto |
 | `N` | Tamaño finito opcional |
 
+## Fórmula y procedimiento
 
-## Función, estadístico o regla de selección
-
-$$
-n_0=\left\lceil\frac{z_{1-\alpha/2}^2p(1-p)}{d^2}\right\rceil
-$$
-
-## Función de distribución acumulada (CDF)
-
-CDF de referencia o del estimador bajo las hipótesis indicadas.
+Para una confianza $1-\alpha$, usa el cuantil normal $z=z_{1-\alpha/2}$. Al 95 %, $z\approx1{,}959964$.
 
 $$
-P(\hat p\le t)\approx\Phi\left(\frac{t-p}{\sqrt{p(1-p)/n}}\right)
+\begin{aligned}
+n_0&=\frac{z_{1-\alpha/2}^2p(1-p)}{d^2}\\[4pt]
+n_\infty&=\lceil n_0\rceil\\[4pt]
+n_F&=\left\lceil\frac{Nn_0}{N-1+n_0}\right\rceil
+\end{aligned}
 $$
 
-## Media, varianza y desviación estándar
+## Margen y corrección finita
 
-$$
-\operatorname{E}[\hat p]=p,\quad\operatorname{Var}(\hat p)=\frac{p(1-p)}n
-$$
-
-Si no se explicita $\sigma=\sqrt{\operatorname{Var}}$, se obtiene como raíz cuadrada de la varianza; cuando no existe, no debe reportarse un valor numérico.
+El margen es absoluto: 0,05 significa 5 puntos porcentuales. Si no hay una estimación previa, $p=0{,}5$ maximiza $p(1-p)$ y da el tamaño más conservador dentro de esta aproximación. La corrección finita solo corresponde a diseños sin reemplazo.
 
 ## Propiedades y casos especiales
 
 Para $p=0$ o $1$ esta aproximación de diseño no informa sobre dispersión; se recomienda un estudio piloto.
 
-![Esquema de Tamaño muestral para proporciones](../imagenes/muestreo.png)
-
-*Figura 1. Representación orientativa del procedimiento o de su distribución de referencia.*
-
 ## Ejemplo resuelto, paso a paso
 
-1. Defina $p=0,5$, confianza 95 % y $d=0,05$.
-2. Sustituya $n_0=1,960²(0,25)/(0,05²)=384,16$.
-3. Requiera al menos 385 elementos; menos si la población finita es pequeña.
+1. **Datos.** Usa proporción esperada 0,5, confianza del 95 % y margen de 0,05, es decir, 5 puntos porcentuales.
+2. **Sustitución.** $n_0=z^2(0{,}5)(1-0{,}5)/(0{,}05)^2\approx384{,}1459$.
+3. **Tamaño.** Redondea hacia arriba: **385** observaciones si no aplicas corrección finita.
+4. **Interpretación.** Para una población de 1 000 unidades y muestreo aleatorio simple sin reemplazo, la corrección reduce el requisito a **278**. No añadas esa corrección a un diseño con reemplazo.
 
 ## Referencias
 

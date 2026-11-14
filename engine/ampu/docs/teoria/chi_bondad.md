@@ -12,45 +12,28 @@ Compara frecuencias observadas con frecuencias esperadas por un modelo categóri
 | `Eᵢ` | Frecuencia esperada positiva |
 | `m` | Parámetros estimados de estos datos |
 
-
-## Función, estadístico o regla de selección
+## Fórmula y procedimiento
 
 $$
 X^2=\sum_{i=1}^{k}\frac{(O_i-E_i)^2}{E_i},\quad\nu=k-1-m
 $$
 
-## Función de distribución acumulada (CDF)
+## Distribución de referencia
 
-CDF de referencia o del estimador bajo las hipótesis indicadas.
-
-$$
-F_{X^2}(x)=\frac{\gamma(\nu/2,x/2)}{\Gamma(\nu/2)}
-$$
-
-## Media, varianza y desviación estándar
-
-$$
-\operatorname{E}[X^2]=\nu,\quad\operatorname{Var}(X^2)=2\nu,\quad\sigma=\sqrt{2\nu}
-$$
-
-Si no se explicita $\sigma=\sqrt{\operatorname{Var}}$, se obtiene como raíz cuadrada de la varianza; cuando no existe, no debe reportarse un valor numérico.
+La referencia es aproximadamente $\chi^2_\nu$ con $\nu=k-1-m>0$. El p-valor es de cola derecha. Las categorías deben ser excluyentes; observadas y esperadas han de tener el mismo total. Frecuencias esperadas pequeñas debilitan la aproximación.
 
 ## Propiedades y casos especiales
 
 Pocas frecuencias esperadas (<5) debilitan la aproximación asintótica. El p-valor es cola derecha.
 
-![Esquema de Chi-cuadrado · bondad de ajuste](../imagenes/inferencia.png)
-
-*Figura 1. Representación orientativa del procedimiento o de su distribución de referencia.*
-
 ## Ejemplo resuelto, paso a paso
 
-1. Tome observadas (12,15,23) y esperadas (15,15,20).
-2. $X^2=(12-15)^2/15+0+(23-20)^2/20=1,05$.
-3. Con $\nu=2$, p $\approx0,592$; no rechace H₀ al 5 %.
+1. **Datos.** Introduce observadas `12 15 23` y esperadas `15 15 20`. Ambas suman 50 y no se han estimado parámetros con estos datos.
+2. **Estadístico.** $X^2=9/15+0+9/20=$ **1,05**.
+3. **Referencia.** Hay $3-1=2$ grados de libertad. La cola derecha da p-valor **0,591555**.
+4. **Conclusión.** No rechaces el modelo al 5 %. Un p-valor grande no demuestra que el modelo sea el único posible.
 
 ## Referencias
 
-- Cochran, W. G. (1977). *Sampling Techniques* (3.ª ed.). Wiley.
 - Casella, G., & Berger, R. L. (2002). *Statistical Inference* (2.ª ed.). Duxbury.
 - Virtanen, P., et al. (2020). SciPy 1.0: Fundamental algorithms for scientific computing in Python. *Nature Methods, 17*, 261–272. https://doi.org/10.1038/s41592-019-0686-2

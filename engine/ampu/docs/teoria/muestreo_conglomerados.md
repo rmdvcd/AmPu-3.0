@@ -2,7 +2,7 @@
 
 ## Definición formal
 
-Sortea grupos completos en una etapa, o sorteos adicionales dentro de grupos elegidos en dos etapas.
+Selecciona grupos completos en una etapa o, en dos etapas, selecciona además unidades dentro de los grupos elegidos.
 
 ## Parámetros y rango
 
@@ -12,42 +12,26 @@ Sortea grupos completos en una etapa, o sorteos adicionales dentro de grupos ele
 | `g` | Conglomerados elegidos, g ≤ G |
 | `m` | Unidades por grupo en segunda etapa, opcional |
 
-
-## Función, estadístico o regla de selección
+## Fórmula y procedimiento
 
 $$
 P(C_j\ \mathrm{seleccionado})=\frac{g}{G}
 $$
 
-## Función de distribución acumulada (CDF)
+## Una o dos etapas
 
-CDF del indicador de inclusión o aproximación de diseño; no existe una única CDF de toda la técnica.
-
-$$
-P(I_j\le t)=\begin{cases}0,&t<0\\1-g/G,&0\le t<1\\1,&t\ge1\end{cases}
-$$
-
-## Media, varianza y desviación estándar
-
-$$
-\operatorname{E}[I_j]=g/G,\quad\operatorname{Var}(I_j)=(g/G)(1-g/G)
-$$
-
-Si no se explicita $\sigma=\sqrt{\operatorname{Var}}$, se obtiene como raíz cuadrada de la varianza; cuando no existe, no debe reportarse un valor numérico.
+En una etapa se incluyen todas las unidades de los grupos elegidos y su probabilidad de inclusión es $g/G$. En dos etapas, si se sortean $m_j$ de las $N_j$ unidades del grupo seleccionado, la inclusión individual es $(g/G)(m_j/N_j)$. No confundas número de conglomerados con número total de personas.
 
 ## Propiedades y casos especiales
 
 Elegir grupos suele ser barato, pero su homogeneidad interna aumenta el error respecto a MAS. En dos etapas: $\pi_{ij}=(g/G)(m_j/N_j)$.
 
-![Esquema de Muestreo por conglomerados](../imagenes/muestreo.png)
-
-*Figura 1. Representación orientativa del procedimiento o de su distribución de referencia.*
-
 ## Ejemplo resuelto, paso a paso
 
-1. Enumere $G=5$ escuelas y sortee $g=2$ sin reemplazo.
-2. La probabilidad de inclusión de cada escuela es $2/5=0,4$.
-3. Incluya a todos los alumnos seleccionados, o sortee $m$ en cada escuela.
+1. **Datos.** Define 5 escuelas con 100 alumnos cada una y selecciona 2 conglomerados, con semilla 42.
+2. **Inclusión.** Cada escuela tiene probabilidad $2/5=0{,}4$ de ser elegida.
+3. **Una etapa.** Deja vacío el tamaño por grupo: se incluyen todos los alumnos de las escuelas elegidas, **200** en total.
+4. **Dos etapas.** Si eliges 10 alumnos por escuela seleccionada, obtienes 20 en total. La probabilidad individual pasa a ser $(2/5)(10/100)=0{,}04$.
 
 ## Referencias
 

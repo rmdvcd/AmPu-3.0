@@ -12,45 +12,28 @@ Resume un conjunto de observaciones con medidas robustas y gráficos exploratori
 | `n` | Tamaño n≥2 |
 | `s` | Desviación muestral |
 
-
-## Función, estadístico o regla de selección
+## Fórmula y procedimiento
 
 $$
 \bar x=\frac1n\sum_i x_i,\quad s^2=\frac1{n-1}\sum_i(x_i-\bar x)^2
 $$
 
-## Función de distribución acumulada (CDF)
+## Dispersión y error estándar
 
-CDF de referencia o del estimador bajo las hipótesis indicadas.
-
-$$
-F_n(t)=\frac1n\sum_i\boldsymbol1(x_i\le t)
-$$
-
-## Media, varianza y desviación estándar
-
-$$
-\operatorname{E}[\bar X]=\mu,\quad\operatorname{Var}(\bar X)=\sigma^2/n,\quad\sigma_{\bar X}=\sigma/\sqrt n
-$$
-
-Si no se explicita $\sigma=\sqrt{\operatorname{Var}}$, se obtiene como raíz cuadrada de la varianza; cuando no existe, no debe reportarse un valor numérico.
+La desviación muestral $s$ describe la dispersión de los datos. Si las observaciones son independientes, el error estándar de la media se estima mediante $s/\sqrt n$. La media y la desviación son sensibles a valores extremos; acompáñalas de mediana, cuartiles y gráficos.
 
 ## Propiedades y casos especiales
 
-CV=$s/|\bar x|$ no se define con media cero. Cuartiles usan interpolación lineal; se reportan todas las modas empatadas.
-
-![Esquema de Estadística descriptiva](../imagenes/analisis.png)
-
-*Figura 1. Representación orientativa del procedimiento o de su distribución de referencia.*
+El coeficiente de variación $s/|\bar x|$ no está definido con media cero y puede ser poco informativo cerca de cero. AmPu usa interpolación lineal en los cuartiles e informa todas las modas empatadas.
 
 ## Ejemplo resuelto, paso a paso
 
-1. Datos (1,2,2,4,5), suma 14 y media 2,8.
-2. Mediana y moda = 2; la varianza muestral se divide por $n-1=4$.
-3. Constrúyase tabla de frecuencias y compare histograma con boxplot.
+1. **Datos.** Introduce `1 2 2 4 5`: hay 5 observaciones y su suma es 14.
+2. **Centro.** La media es $14/5=$ **2,8**. La mediana y la moda son **2**.
+3. **Dispersión.** La suma de desviaciones cuadradas es 10,8. Divide por $n-1=4$: $s^2=$ **2,7** y $s\approx$ **1,643168**.
+4. **Interpretación.** La varianza está en unidades al cuadrado; la desviación está en las unidades originales. No confundas desviación estándar con error estándar de la media.
 
 ## Referencias
 
-- Cochran, W. G. (1977). *Sampling Techniques* (3.ª ed.). Wiley.
 - Casella, G., & Berger, R. L. (2002). *Statistical Inference* (2.ª ed.). Duxbury.
 - Virtanen, P., et al. (2020). SciPy 1.0: Fundamental algorithms for scientific computing in Python. *Nature Methods, 17*, 261–272. https://doi.org/10.1038/s41592-019-0686-2
