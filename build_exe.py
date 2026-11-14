@@ -38,8 +38,8 @@ def preparar_entorno() -> Path:
     shutil.copytree(FRONTEND_DIR, BUILD_DIR / "frontend")
     shutil.copytree(ENGINE_DIR, BUILD_DIR / "engine", ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
     shutil.copy2(BASE_DIR / "app.py", BUILD_DIR / "app.py")
-    shutil.copy2(BASE_DIR / "main.py", BUILD_DIR / "main.py")
-    shutil.copy2(BASE_DIR / "escritorio.py", BUILD_DIR / "escritorio.py")
+    for nombre in ("main.py", "AmPu.pyw", "arranque.py", "escritorio.py", "lanzador.py"):
+        shutil.copy2(BASE_DIR / nombre, BUILD_DIR / nombre)
     if (BASE_DIR / "requirements.txt").exists():
         shutil.copy2(BASE_DIR / "requirements.txt", BUILD_DIR / "requirements.txt")
     return BUILD_DIR
@@ -72,6 +72,9 @@ def construir(build_dir: Path) -> Path:
         f"{build_dir / 'engine'}{os.pathsep}engine",
         "--collect-all",
         "ampu",
+        # El motor se importa por nombre después de mostrar el launcher.
+        "--hidden-import",
+        "app",
         "--hidden-import",
         "numpy",
         "--hidden-import",
@@ -98,8 +101,10 @@ def construir(build_dir: Path) -> Path:
     ]
     if sys.platform == "win32":
         cmd.insert(4, "--windowed")
-        # La importación de la bandeja es diferida y solo existe en Windows.
-        cmd[-1:-1] = ["--hidden-import", "pystray._win32", "--hidden-import", "PIL.IcoImagePlugin"]
+        # Tk/PyInstaller incluye Tcl/Tk; no se necesita un navegador incrustado.
+        # Las importaciones GUI son diferidas para mantener utilizable app.py.
+        for modulo in ("tkinter", "tkinter.ttk", "tkinter.messagebox", "pystray._win32", "PIL.IcoImagePlugin"):
+            cmd[-1:-1] = ["--hidden-import", modulo]
 
     entorno = dict(os.environ)
     entorno["PYTHONPATH"] = os.pathsep.join([str(VENDOR_DIR), str(build_dir / "engine"), entorno.get("PYTHONPATH", "")])
@@ -118,9 +123,21 @@ def construir(build_dir: Path) -> Path:
     return destino
 
 
+def comprobar_tk() -> None:
+    if sys.platform != "win32":
+        return
+    try:
+        from tkinter import TkVersion
+    except ImportError:
+        raise SystemExit("El launcher necesita Tcl/Tk. Activa «Tcl/Tk and IDLE» en el instalador de Python para Windows antes de compilar.") from None
+    if TkVersion < 8.6:
+        raise SystemExit("El launcher necesita Tcl/Tk 8.6 o posterior.")
+
+
 def main() -> None:
     if not (VENDOR_DIR / "PyInstaller").exists():
         raise SystemExit("PyInstaller no está en vendor/. Instala las dependencias con: pip install --target vendor -r requirements-build.txt")
+    comprobar_tk()
     construir(preparar_entorno())
 
 

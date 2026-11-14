@@ -90,13 +90,14 @@ class IconoTest(unittest.TestCase):
                     self.assertEqual(respuesta.get_data(), (STATIC_DIR / nombre).read_bytes())
                     self.assertEqual(respuesta.headers["X-Content-Type-Options"], "nosniff")
 
-    def test_empaquetado_incluye_modulo_bandeja_y_usa_el_ico(self):
+    def test_empaquetado_incluye_launcher_motor_y_bandeja_y_usa_el_ico(self):
         # Comprueba recursos y comandos reales; no simula una compilación nativa de Windows.
         with tempfile.TemporaryDirectory() as temporal:
             raiz = Path(temporal)
             with patch.object(build_exe, "BUILD_DIR", raiz / "build"), patch.object(build_exe, "OUTPUT_DIR", raiz / "salida"):
                 preparado = build_exe.preparar_entorno()
-                self.assertEqual((preparado / "escritorio.py").read_bytes(), (BASE_DIR / "escritorio.py").read_bytes())
+                for nombre in ("main.py", "AmPu.pyw", "arranque.py", "escritorio.py", "lanzador.py", "app.py"):
+                    self.assertEqual((preparado / nombre).read_bytes(), (BASE_DIR / nombre).read_bytes())
                 for nombre in ("favicon.ico", "img/icono_ampu.png", "img/icono_ampu.svg"):
                     self.assertEqual((preparado / "frontend/static" / nombre).read_bytes(), (STATIC_DIR / nombre).read_bytes())
                 for plataforma in ("linux", "win32"):
@@ -105,9 +106,13 @@ class IconoTest(unittest.TestCase):
                             self.assertEqual(Path(cmd[cmd.index("--icon") + 1]), preparado / "frontend/static/favicon.ico")
                             self.assertEqual(cwd, preparado)
                             self.assertIn("--onefile", cmd)
+                            self.assertEqual(Path(cmd[-1]), preparado / "main.py")
+                            ocultos = [cmd[i + 1] for i, valor in enumerate(cmd) if valor == "--hidden-import"]
+                            # app se carga con importlib cuando la ventana ya existe.
+                            self.assertIn("app", ocultos)
                             self.assertEqual("--windowed" in cmd, plataforma == "win32")
-                            self.assertEqual("pystray._win32" in cmd, plataforma == "win32")
-                            self.assertEqual("PIL.IcoImagePlugin" in cmd, plataforma == "win32")
+                            for modulo in ("tkinter", "tkinter.ttk", "tkinter.messagebox", "pystray._win32", "PIL.IcoImagePlugin"):
+                                self.assertEqual(modulo in ocultos, plataforma == "win32")
                             generado = preparado / "dist" / (build_exe.APP_NAME + (".exe" if plataforma == "win32" else ""))
                             generado.parent.mkdir(exist_ok=True)
                             generado.write_bytes(b"comprobacion del comando, no es un ejecutable")
@@ -117,6 +122,17 @@ class IconoTest(unittest.TestCase):
                             salida = build_exe.construir(preparado)
                         llamada.assert_called_once()
                         self.assertTrue(salida.is_file())
+
+    def test_compilar_launcher_exige_tk86_solo_en_windows(self):
+        with patch.object(build_exe.sys, "platform", "linux"), patch.dict("sys.modules", {"tkinter": None}):
+            build_exe.comprobar_tk()
+        with patch.object(build_exe.sys, "platform", "win32"):
+            with patch.dict("sys.modules", {"tkinter": None}), self.assertRaisesRegex(SystemExit, "Tcl/Tk and IDLE"):
+                build_exe.comprobar_tk()
+            with patch.dict("sys.modules", {"tkinter": types.SimpleNamespace(TkVersion=8.5)}), self.assertRaisesRegex(SystemExit, "8.6"):
+                build_exe.comprobar_tk()
+            with patch.dict("sys.modules", {"tkinter": types.SimpleNamespace(TkVersion=8.6)}):
+                build_exe.comprobar_tk()
 
 
 if __name__ == "__main__":

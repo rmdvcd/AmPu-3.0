@@ -59,7 +59,8 @@ class SeguridadTest(unittest.TestCase):
         import re
         from pathlib import Path
         raiz = Path(app.__file__).resolve().parent
-        fuentes = [raiz / "app.py", raiz / "main.py", *sorted((raiz / "engine").rglob("*.py"))]
+        fuentes = [*(raiz / nombre for nombre in ("app.py", "main.py", "AmPu.pyw", "arranque.py", "escritorio.py", "lanzador.py")),
+                   *sorted((raiz / "engine").rglob("*.py"))]
         self.assertGreater(len(fuentes), 20)
         for ruta in fuentes:
             codigo = ruta.read_text(encoding="utf-8")
