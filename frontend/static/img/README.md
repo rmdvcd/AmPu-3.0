@@ -9,10 +9,11 @@ ambos temas de la aplicación.
 
 - `icono_ampu.svg`: vector de 64 × 64 unidades, para la barra lateral y los
   encabezados de todos los diálogos HTML.
-- `icono_ampu.png`: 256 × 256 px RGBA, para la bandeja nativa de Windows.
+- `icono_ampu.png`: 256 × 256 px RGBA, para la ventana del launcher y la
+  bandeja nativa de Windows.
 - `../favicon.svg`: el mismo vector para la pestaña del navegador.
 - `../favicon.ico`: cuadros de 16, 20, 24, 32, 40, 48, 64, 128 y 256 px, para
-  navegadores y el icono del ejecutable de Windows al recompilar.
+  navegadores, la ventana de Windows y el icono del ejecutable al recompilar.
 - `engine/ampu/docs/render/icono_ampu.svg`: copia del vector para las páginas
   de teoría independientes, que también funcionan sin conexión.
 
@@ -30,5 +31,6 @@ PYTHONPATH=vendor python3 scripts/generar_iconos.py
 `tests/test_icono.py` comprueba geometría, transparencia, nitidez mínima,
 regeneración determinista, entrega HTTP y recursos/comandos de empaquetado.
 `tests/test_lectura.mjs` comprueba la marca en los diálogos reales. Las pruebas
-simuladas de bandeja están en `tests/test_escritorio.py`; no sustituyen una
-comprobación del ejecutable y de Explorer en Windows.
+simuladas de bandeja están en `tests/test_escritorio.py` y el control del
+launcher en `tests/test_lanzador.py`; no sustituyen una comprobación del
+launcher, del ejecutable y de Explorer en Windows.

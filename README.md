@@ -85,16 +85,42 @@ Para escuchar en todas las interfaces (por ejemplo, dentro de un contenedor):
 AMPU_HOST=0.0.0.0 PORT=5000 PYTHONPATH=vendor python3 app.py
 ```
 
-Arranque de escritorio, que abre el navegador cuando el motor ya responde:
+### Arranque de escritorio en Windows
 
-```bash
-PYTHONPATH=vendor python3 main.py
-```
+Abre **`AmPu.pyw` con doble clic** o ejecuta `pyw -3.11 AmPu.pyw`. No hace falta
+configurar `PYTHONPATH`: la entrada reconoce `vendor/` y `engine/`. Python debe
+incluir **Tcl/Tk** (opción «Tcl/Tk and IDLE» del instalador oficial).
+El `.exe` portable ya incluye estos componentes.
 
-Variables útiles: `AMPU_HOST`, `PORT`, `AMPU_NO_BROWSER=1` y `AMPU_NO_TRAY=1`.
-En Windows, este arranque muestra una bandeja propia con «Abrir AmPu» y
-«Salir de AmPu». Cerrar la pestaña no detiene el motor; usa la opción de salida
-de la bandeja. `python app.py` solo inicia el servidor, sin bandeja.
+En lugar de una consola aparece un **launcher** con el estado del motor,
+la dirección local y las acciones **Abrir AmPu**, **Minimizar a bandeja** y
+**Salir**. El navegador se abre cuando el motor confirma su salud.
+
+- Minimizar o cerrar con **×** envía el launcher al área de notificación de
+  Windows; el motor sigue activo, aunque cierres la pestaña del navegador.
+- Desde el icono de bandeja puedes **Mostrar launcher**, **Abrir AmPu** o
+  **Salir de AmPu**. Salir detiene el servidor y libera el puerto.
+- Si no está disponible la bandeja, la ventana permanece accesible en la barra
+  de tareas y cerrar con × pide confirmar la salida. **No se abre una consola
+  de respaldo**.
+
+`python main.py` usa el mismo launcher en Windows, sin ocultar una terminal
+compartida de cmd/PowerShell. En Linux/macOS mantiene el modo de consola.
+`python app.py` solo inicia el servidor, sin launcher ni bandeja.
+
+| Variable | Efecto en el arranque de escritorio |
+| --- | --- |
+| `AMPU_HOST` | Interfaz de escucha; por defecto `127.0.0.1` |
+| `AMPU_PORT` / `PORT` | Puerto; `AMPU_PORT` tiene prioridad y el predeterminado es `5000`. El servidor directo `app.py` usa `PORT` |
+| `AMPU_NO_BROWSER=1` | No abre el navegador automáticamente; «Abrir AmPu» sigue disponible |
+| `AMPU_NO_TRAY=1` | Mantiene el launcher en la barra de tareas, sin icono de bandeja |
+| `AMPU_NO_LAUNCHER=1` | Modo de consola explícito para diagnóstico; `Ctrl+C` detiene el motor |
+
+**Ver registro** abre `%LOCALAPPDATA%\AmPu\logs\ampu.log` (o, si esa carpeta no
+se puede escribir, `%TEMP%\AmPu\logs\ampu.log`). Se conservan el archivo actual
+y dos copias rotativas de hasta 1 MiB cada uno. Los errores de arranque se
+muestran en el launcher; si ni siquiera se puede crear la ventana, se muestra
+un aviso nativo con la ubicación del registro.
 
 La aplicación se sirve con Waitress. Por seguridad solo atiende peticiones
 dirigidas a `127.0.0.1`/`localhost` y no se deja incrustar en otras páginas. Si
@@ -110,8 +136,11 @@ la publicas detrás de un proxy o con otro nombre:
 ```
 .
 ├── app.py                  # Servidor Flask, API JSON y exportaciones
-├── main.py                 # Arranque de escritorio
-├── escritorio.py           # Identidad y bandeja nativa de Windows
+├── AmPu.pyw                # Doble clic en Windows, sin consola
+├── main.py                 # Selección de launcher / diagnóstico
+├── lanzador.py             # Ventana Tk y control de acciones en su hilo principal
+├── arranque.py             # Motor local en segundo plano, salud y cierre
+├── escritorio.py           # Identidad, registro y bandeja nativa de Windows
 ├── build_exe.py            # Empaquetado real con PyInstaller
 ├── requirements.txt        # Dependencias de ejecución
 ├── requirements-build.txt  # + PyInstaller, solo para el ejecutable
@@ -212,7 +241,8 @@ node --test --test-concurrency=1 tests/test_*.mjs
 | `tests/test_graficos.mjs` | Leyendas sin solapamientos a 180, 240, 360 y 760 px, en ambos temas, con nombres largos, zoom, conmutación de series y resumen del diagrama de caja |
 | `tests/test_temas.mjs` | Contraste calculado de texto (≥ 4,5:1), controles y gráficos (≥ 3:1), hover/foco/carga real, placeholders, avisos, series ocultas, fotogramas del cambio de tema, sistema y persistencia |
 | `tests/test_icono.py` | Identidad vectorial simplificada, PNG y nueve tamaños ICO, transparencia, regeneración determinista y recursos/comandos de PyInstaller (sin compilar el ejecutable) |
-| `tests/test_escritorio.py` | Salud antes de abrir el navegador, identidad Windows, recursos `_MEIPASS`, menú abrir/salir, vigilancia del servidor y respaldo de consola; backend nativo simulado |
+| `tests/test_escritorio.py` | Salud/versionado, arranque cancelable, conflicto y liberación real del puerto; entrada sin consola implícita, identidad, registro rotativo, recursos `_MEIPASS` y bandeja Win32 simulada |
+| `tests/test_lanzador.py` | Control de abrir/minimizar/restaurar/salir, recuperación sin bandeja, errores y cierre acotado; vista simulada y acciones despachadas en el hilo principal |
 | `tests/test_teoria.py` · `ejemplos_teoria.json` | Un caso numérico por cada una de las 57 lecciones, corrección finita y dos etapas; Markdown completo, TOC y subíndices sin recortes |
 | `tests/test_lectura.mjs` | Todas las fórmulas con KaTeX real; iconos, HTML seguro, pasos y tablas/fórmulas desplazables por teclado; diálogos, buscador y páginas independientes en ambos temas y tamaños de pantalla |
 
@@ -249,9 +279,12 @@ PYTHONPATH=vendor python3 build_exe.py
 
 En Windows genera `dist/ampu_portable_3_0.exe`; en Linux/macOS, un ejecutable sin
 extensión. El ejecutable incluye `frontend/`, `engine/` y las dependencias; el
-navegador se abre solo cuando `/api/salud` responde.
+navegador se abre solo cuando `/api/salud` confirma el estado y la versión del
+motor propio. Compila en Windows con Python 3.11 y Tcl/Tk 8.6 o posterior para
+generar el launcher; PyInstaller incorpora sus bibliotecas, de modo que el
+equipo de destino no necesita Python instalado.
 
-### Identidad y bandeja de Windows
+### Launcher, identidad y bandeja de Windows
 
 El icono del `.exe` se incorpora con `--icon` al **recompilar en Windows**;
 no modifica ejecutables ya generados. El SVG de la barra lateral, los diálogos,
@@ -263,23 +296,39 @@ el nuevo símbolo simplificado. Consulta
 PYTHONPATH=vendor python3 scripts/generar_iconos.py
 ```
 
-El ejecutable de Windows se construye sin consola e incluye `pystray._win32`.
-Si la bandeja falla o se desactiva, AmPu intenta abrir una consola de respaldo.
-El icono de bandeja desaparece al salir o si el servidor deja de funcionar.
+El ejecutable de Windows usa `--windowed` e incluye Tkinter/Tcl/Tk y
+`pystray._win32`. La ventana se crea antes de importar el motor estadístico;
+la carga y el servidor trabajan en segundo plano, sin bloquear los controles.
+Los callbacks de la bandeja se encolan para atenderlos en el hilo de la ventana.
+Si falla el motor, el launcher vuelve a mostrarse con el aviso y acceso al
+registro; nunca se conecta silenciosamente a otra instancia que ocupe el puerto.
+La salida espera la retirada de la bandeja y el cierre del servidor, con un
+plazo máximo de tres segundos para que un arranque atascado no impida salir.
+
+La ventana, el área de notificación y el `.exe` usan el mismo icono.
 La identidad `AmPu.Laboratorio.3` pertenece al proceso de AmPu: **no sustituye
 el icono nativo ni la agrupación de ventanas del navegador predeterminado**.
 
 Comprobación manual necesaria en Windows después de recompilar:
 
-1. Abrir el ejecutable y revisar su icono, la pestaña y los diálogos de la app.
-2. Verificar la bandeja a escala 100 %, 125 % y 150 %, abrir su menú y recuperar
-   la app después de cerrar la pestaña.
-3. Usar «Salir de AmPu» y comprobar que desaparecen el icono y el proceso y que
-   el puerto vuelve a estar disponible.
-4. Probar `AMPU_NO_TRAY=1` y la recuperación tras reiniciar Explorer.
+1. Abrir `AmPu.pyw` y el ejecutable; verificar que aparece el launcher sin
+   consola, con icono propio, estado de carga y botones operativos. Revisar
+   también la pestaña y los diálogos HTML de la app.
+2. Probar minimizar con el botón del launcher, con el de la barra de título
+   y cerrar con ×. Restaurar desde «Mostrar launcher» y abrir la app desde
+   la bandeja después de cerrar la pestaña. Comprobar escalas 100 %, 125 % y 150 %.
+3. Usar «Salir» tanto desde la ventana como desde el menú; verificar que
+   desaparecen el icono y el proceso y que el puerto vuelve a estar disponible.
+   Repetir saliendo mientras aún se carga el motor.
+4. Probar `AMPU_NO_TRAY=1`, `AMPU_NO_BROWSER=1` y la restauración del icono al
+   reiniciar Explorer. Si falla la bandeja, el launcher debe seguir accesible.
+5. Abrir una segunda instancia con el mismo puerto: debe mostrar el error sin
+   abrir la primera instancia ni detenerla. Comprobar «Ver registro» y un
+   puerto inválido (aviso nativo, sin consola).
 
-Las pruebas de Linux validan recursos, comandos y contratos simulados; no
-certifican el comportamiento nativo de la barra de tareas o de Explorer.
+Las pruebas de Linux validan el servidor real, recursos, comandos de
+empaquetado y contratos simulados de ventana/Win32; **no certifican una ejecución
+gráfica nativa ni la compilación del ejecutable en Windows**.
 
 ## Privacidad y alcance
 
