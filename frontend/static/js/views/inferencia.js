@@ -6,9 +6,7 @@ import {
   campo,
   kpi,
   badge,
-  tabla,
   alerta,
-  estadoVacio,
   toast,
   copiar,
   conCarga,
@@ -20,9 +18,7 @@ import {
   textoError,
   fmtPorcentaje,
   segmentado,
-  renderMath,
   latex,
-  pliegue,
   anunciar,
   botonesExportar,
   comportamientoScroll,
@@ -31,9 +27,10 @@ import { icono } from "../icons.js";
 import { dibujar } from "../chart.js";
 import { api, esCancelacion } from "../api.js";
 import { fmtEntrada } from "../entrada.js";
-import { cargarMeta, leccion, navegar, registrarHistorial, transito } from "../store.js";
+import { cargarMeta, leccion, registrarHistorial, transito } from "../store.js";
+import { abrirVentana, cerrarVentanasPorAlcance, ventanasAbiertas, barraResultados } from "../ventanas.js";
+import { abrirTeoriaVentana } from "../teoria_dialogo.js";
 
-/* Ejemplos escritos con la convención de entrada de AmPu: coma decimal y valores separados por espacios. */
 const EJEMPLOS_PRUEBA = {
   t_una: { datos: "12,4 11,8 13,1 12,9 12,2 12,7 12,5 11,9 12,8 12,3", mu0: 12 },
   z_una: { datos: "10,1 9,8 10,4 9,9 10,2 10,3 9,7 10,5", mu0: 10, sigma: 0.6 },
@@ -59,6 +56,7 @@ const EJEMPLOS_PRUEBA = {
 };
 
 const GRUPOS = ["Medias", "Proporciones", "Asociación", "No paramétricas"];
+const NOMBRES_FAMILIA = { normal: "N(0, 1)", t: "t de Student", chi2: "χ²", f: "F de Snedecor" };
 
 function normalizar(texto) {
   return String(texto || "")
@@ -68,14 +66,12 @@ function normalizar(texto) {
 }
 
 function valorTexto(valor) {
-  // Series numéricas llegadas de otra vista: coma decimal y espacios, como las escribiría el usuario.
   if (Array.isArray(valor) && valor.every((v) => typeof v === "number")) return valor.map((v) => fmtEntrada(v)).join(" ");
   if (Array.isArray(valor)) return valor.join("\n");
   if (valor === null || valor === undefined) return "";
   return String(valor);
 }
 
-/* Umbrales orientativos de Cohen (1988). Son convenciones, no reglas: dependen del campo de estudio. */
 const EFECTOS = [
   ["d_cohen", "d de Cohen", [0.2, 0.5, 0.8], "efecto"],
   ["h_cohen", "h de Cohen", [0.2, 0.5, 0.8], "efecto"],
@@ -137,7 +133,6 @@ function filasExtras(extras) {
   return filas;
 }
 
-/** La F de Snedecor tiene dos grados de libertad: numerador y denominador. */
 function glDobles(datos) {
   const p = datos.curva && datos.curva.parametros;
   return Boolean(p && p.gl1 !== undefined && p.gl1 !== null && p.gl2 !== undefined && p.gl2 !== null);
@@ -149,6 +144,14 @@ function textoGl(datos, decimales = 2) {
     return `${fmtNum(gl1, { decimales })}; ${fmtNum(gl2, { decimales })}`;
   }
   return fmtNum(datos.gl, { decimales });
+}
+
+function nombreNula(curva) {
+  const p = curva.parametros || {};
+  if (curva.familia === "t") return `t(${fmtNum(p.gl, { decimales: 2 })})`;
+  if (curva.familia === "chi2") return `χ²(${fmtNum(p.gl, { decimales: 2 })})`;
+  if (curva.familia === "f") return `F(${fmtNum(p.gl1 ?? p.gl, { decimales: 2 })}; ${fmtNum(p.gl2, { decimales: 2 })})`;
+  return NOMBRES_FAMILIA[curva.familia] || curva.familia;
 }
 
 export async function montar(host, parametro) {
@@ -164,6 +167,7 @@ export async function montar(host, parametro) {
   let prueba = pruebas.find((p) => p.clave === parametro)?.clave
     || (transito.inferencia?.prueba && pruebas.some((p) => p.clave === transito.inferencia.prueba) ? transito.inferencia.prueba : "t_una");
   let resultado = null;
+  let specActual = pruebas.find((p) => p.clave === prueba);
   let campos = {};
   let alfa = 0.05;
   let alternativa = "two-sided";
@@ -185,7 +189,10 @@ export async function montar(host, parametro) {
   });
   panelPruebas.cuerpo.classList.add("panel__cuerpo--estrecho");
 
-  const contenido = el("div", { class: "pila", "aria-live": "polite" });
+  const formHost = el("div");
+  const barraHost = el("div", { "aria-live": "polite" });
+  const errorHost = el("div", { "aria-live": "polite" });
+  const contenido = el("div", { class: "pila", "aria-live": "polite" }, formHost, barraHost, errorHost);
 
   host.append(
     el(
@@ -204,16 +211,16 @@ export async function montar(host, parametro) {
             icono("inferencia", { tamano: 26 }),
             el("h1", { tabindex: "-1" }, "Inferencia estadística")
           ),
-          el(
-            "p",
-            { class: "vista__subtitulo" },
-            VISTAS.inferencia.subtitulo
-          )
+          el("p", { class: "vista__subtitulo" }, VISTAS.inferencia.subtitulo)
         ),
         el(
           "div",
           { class: "vista__acciones" },
-          boton("Intervalos y error", { variante: "secundario", icono: "teoria", onClick: () => navegar("teoria/intervalos_confianza") })
+          boton("Teoría", {
+            variante: "secundario",
+            icono: "teoria",
+            onClick: () => abrirTeoriaVentana(specActual?.teoria || "intervalos_confianza", { alcance: "vista" }),
+          })
         )
       ),
       el("div", { class: "dividido" }, panelPruebas, contenido)
@@ -262,18 +269,10 @@ export async function montar(host, parametro) {
       nombre: spec.id,
       onInput,
     };
-    if (spec.tipo === "serie") {
-      return campo({ ...comun, tipo: "serie", filas: 4, ayuda: "" });
-    }
-    if (spec.tipo === "matriz") {
-      return campo({ ...comun, tipo: "matriz", filas: 5, ayuda: "Una fila por línea." });
-    }
-    if (spec.tipo === "grupos") {
-      return campo({ ...comun, tipo: "matriz", filas: 5, ayuda: "Una línea por grupo." });
-    }
-    if (spec.tipo === "entero") {
-      return campo({ ...comun, tipo: "numero", min: spec.min ?? null, max: spec.max ?? null });
-    }
+    if (spec.tipo === "serie") return campo({ ...comun, tipo: "serie", filas: 4, ayuda: "" });
+    if (spec.tipo === "matriz") return campo({ ...comun, tipo: "matriz", filas: 5, ayuda: "Una fila por línea." });
+    if (spec.tipo === "grupos") return campo({ ...comun, tipo: "matriz", filas: 5, ayuda: "Una línea por grupo." });
+    if (spec.tipo === "entero") return campo({ ...comun, tipo: "numero", min: spec.min ?? null, max: spec.max ?? null });
     if (spec.tipo === "opcion") {
       return campo({
         etiqueta: spec.etiqueta,
@@ -307,7 +306,7 @@ export async function montar(host, parametro) {
       valor: alfa,
       min: 0.0001,
       max: 0.9999,
-      ayuda: "Probabilidad de rechazar H₀ cuando es cierta. Lo habitual es 0,05.",
+      ayuda: "Probabilidad de rechazar H₀ cuando es cierta (habitual: 0,05).",
     });
     const chipsAlfa = el(
       "div",
@@ -328,7 +327,6 @@ export async function montar(host, parametro) {
       )
     );
 
-    // Solo las pruebas direccionales admiten alternativa; χ², ANOVA y Kruskal son ómnibus.
     const admiteAlternativa = spec.admite_alternativa !== false;
     const h1Vivo = el("strong", {}, admiteAlternativa ? spec.h1_alternativas?.[alternativa] || spec.h1 : spec.h1);
     const hipotesisVivas = el(
@@ -351,7 +349,7 @@ export async function montar(host, parametro) {
             h1Vivo.textContent = spec.h1_alternativas?.[valor] || spec.h1;
           },
         })
-      : el("p", { class: "campo__ayuda" }, "Esta prueba contrasta todas las diferencias a la vez: no tiene versión unilateral.");
+      : el("p", { class: "campo__ayuda" }, "Prueba ómnibus sin versión unilateral.");
 
     botonEjecutar = boton("Ejecutar prueba", { icono: "reproducir", dataset: { accionPrimaria: "true" } });
     const botonLimpiar = boton("Limpiar", {
@@ -364,8 +362,9 @@ export async function montar(host, parametro) {
           campos[definicion.id].limpiarError();
         }
         resultado = null;
-        contenido.querySelector(".resultado-prueba")?.remove();
-        contenido.append(renderInicial(spec));
+        errorHost.replaceChildren();
+        renderBarra(spec);
+        cerrarVentanasPorAlcance("vista");
       },
     });
     const botonEjemplo = boton("Cargar ejemplo", {
@@ -382,11 +381,21 @@ export async function montar(host, parametro) {
 
     botonEjecutar.addEventListener("click", ejecutar);
 
-    const nodo = panel({
+    return panel({
       titulo: spec.nombre,
       subtitulo: spec.descripcion,
       icono: "inferencia",
-      acciones: [badge(spec.grupo, "marca")],
+      acciones: [
+        badge(spec.grupo, "marca"),
+        spec.teoria
+          ? boton("Teoría", {
+              variante: "fantasma",
+              pequeno: true,
+              icono: "teoria",
+              onClick: () => abrirTeoriaVentana(spec.teoria, { alcance: "vista" }),
+            })
+          : null,
+      ].filter(Boolean),
       contenido: el(
         "div",
         { class: "pila" },
@@ -401,37 +410,8 @@ export async function montar(host, parametro) {
           el("div", { class: "pila pila--sm" }, campoAlfa.envoltura, chipsAlfa),
           el("div", { class: "campo" }, el("span", { class: "campo__etiqueta" }, "Contraste"), selectorAlternativa)
         ),
-        pliegue({
-          titulo: "Supuestos y buenas prácticas",
-          icono: "escudo",
-          contenido: el(
-            "div",
-            { class: "pila pila--sm" },
-            el("p", {}, spec.supuestos || "Revisa independencia, escala y tamaño de muestra antes de interpretar."),
-            boton("Ver la lección", {
-              variante: "fantasma",
-              pequeno: true,
-              icono: "teoria",
-              onClick: () => spec.teoria && navegar(`teoria/${spec.teoria}`),
-            })
-          ),
-        }),
-        el("div", { class: "fila fila--entre" }, el("div", { class: "fila" }, botonEjecutar, botonEjemplo, botonLimpiar))
+        el("div", { class: "fila" }, botonEjecutar, botonEjemplo, botonLimpiar)
       ),
-    });
-    return nodo;
-  }
-
-  function renderInicial(spec) {
-    return panel({
-      titulo: "Listo para ejecutar",
-      icono: "info",
-      clase: "resultado-prueba",
-      contenido: estadoVacio({
-        icono: "inferencia",
-        titulo: "Completa los datos y ejecuta la prueba",
-        texto: `Revisa los supuestos de «${spec.nombre}» y pulsa «Ejecutar prueba».`,
-      }),
     });
   }
 
@@ -449,7 +429,6 @@ export async function montar(host, parametro) {
         continue;
       }
       if (["serie", "matriz", "grupos"].includes(definicion.tipo)) {
-        // El campo usa el mismo lector que el motor: si no se puede leer, el error ya indica dónde.
         if (!c.validar()) {
           ok = false;
           continue;
@@ -520,11 +499,15 @@ export async function montar(host, parametro) {
     if (controlador) controlador.abort();
     controlador = new AbortController();
     botonEjecutar.cargando(true);
-    contenido.querySelector(".resultado-prueba")?.setAttribute("aria-busy", "true");
+    errorHost.replaceChildren();
     try {
       const datos = await api.post("/api/inferencia", payload, { senal: controlador.signal });
       resultado = datos;
-      renderResultado(spec, datos);
+      specActual = spec;
+      renderBarra(spec);
+      abrirResultadosVentana(spec, datos);
+      if (ventanasAbiertas().some((v) => v.id === "inf-grafico")) abrirGraficoVentana(spec, datos, { enfocar: false });
+      if (ventanasAbiertas().some((v) => v.id === "inf-tabla")) abrirDetalleVentana(spec, datos, { enfocar: false });
       registrarHistorial({
         titulo: `${spec.nombre}`,
         detalle: `p = ${fmtP(datos.p_valor)} · ${datos.rechaza ? "se rechaza H₀" : "no se rechaza H₀"}`,
@@ -535,40 +518,23 @@ export async function montar(host, parametro) {
       anunciar(datos.rechaza ? "Se rechaza la hipótesis nula." : "No se rechaza la hipótesis nula.");
     } catch (error) {
       if (!esCancelacion(error)) {
-        resultado = null;
-        contenido.querySelector(".resultado-prueba")?.remove();
         const enCampo = errorEnCampo(error, { ...campos, alfa: campoAlfa });
-        const bloqueError = panel({
-          titulo: "No se pudo ejecutar la prueba",
-          icono: "alerta",
-          contenido: alerta({
+        errorHost.replaceChildren(
+          alerta({
             tipo: "error",
             titulo: error.tipo === "timeout" ? "El cálculo tardó demasiado" : enCampo ? "Revisa el campo marcado" : "Revisa los datos",
             texto: textoError(error),
             acciones: [boton("Reintentar", { variante: "secundario", pequeno: true, icono: "actualizar", onClick: ejecutar })],
-          }),
-        });
-        bloqueError.classList.add("resultado-prueba");
-        contenido.append(bloqueError);
+          })
+        );
         anunciar(`Error: ${error.message}`);
       }
     } finally {
       botonEjecutar.cargando(false);
-      contenido.querySelector(".resultado-prueba")?.setAttribute("aria-busy", "false");
     }
   }
 
-  /* ------------------------- resultado ------------------------- */
-
-  const NOMBRES_FAMILIA = { normal: "N(0, 1)", t: "t de Student", chi2: "χ²", f: "F de Snedecor" };
-
-  function nombreNula(curva) {
-    const p = curva.parametros || {};
-    if (curva.familia === "t") return `t(${fmtNum(p.gl, { decimales: 2 })})`;
-    if (curva.familia === "chi2") return `χ²(${fmtNum(p.gl, { decimales: 2 })})`;
-    if (curva.familia === "f") return `F(${fmtNum(p.gl1 ?? p.gl, { decimales: 2 })}; ${fmtNum(p.gl2, { decimales: 2 })})`;
-    return NOMBRES_FAMILIA[curva.familia] || curva.familia;
-  }
+  /* ------------------------- ventanas emergentes ------------------------- */
 
   function configGrafico(datos) {
     if (!datos.curva) return null;
@@ -577,16 +543,12 @@ export async function montar(host, parametro) {
     if (!xs.length) return null;
     const xmin = Math.min(...xs);
     const xmax = Math.max(...xs);
-    // La región crítica la define el motor (curva.region y sus valores críticos):
-    // así el dibujo no puede contradecir la decisión.
     const regiones = [];
     const bajo = curva.critico_bajo === null || curva.critico_bajo === undefined ? null : Number(curva.critico_bajo);
     const alto = curva.critico_alto === null || curva.critico_alto === undefined ? null : Number(curva.critico_alto);
-    if (curva.region === "izquierda" && bajo !== null) {
-      regiones.push({ desde: xmin, hasta: bajo, etiqueta: "rechazo (α)" });
-    } else if (curva.region === "derecha" && alto !== null) {
-      regiones.push({ desde: alto, hasta: xmax, etiqueta: "rechazo (α)" });
-    } else if (curva.region === "bilateral" && bajo !== null && alto !== null) {
+    if (curva.region === "izquierda" && bajo !== null) regiones.push({ desde: xmin, hasta: bajo, etiqueta: "rechazo (α)" });
+    else if (curva.region === "derecha" && alto !== null) regiones.push({ desde: alto, hasta: xmax, etiqueta: "rechazo (α)" });
+    else if (curva.region === "bilateral" && bajo !== null && alto !== null) {
       regiones.push({ desde: xmin, hasta: bajo, etiqueta: "α/2" });
       regiones.push({ desde: alto, hasta: xmax, etiqueta: "α/2" });
     }
@@ -600,7 +562,7 @@ export async function montar(host, parametro) {
       fueraDeRango: Number.isFinite(estadistico) && !dentro ? estadistico : null,
       xlabel: `Estadístico de prueba (${simbolo})`,
       ylabel: "Densidad bajo H₀",
-      altura: 280,
+      altura: 320,
       yCero: true,
       ariaLabel: `Distribución ${nombreNula(curva)} del estadístico bajo la hipótesis nula, con la región de rechazo sombreada`,
       descripcion: `Estadístico observado ${simbolo} = ${fmtNum(estadistico)}. ${datos.rechaza ? "Cae en la región de rechazo." : "No cae en la región de rechazo."}`,
@@ -629,7 +591,110 @@ export async function montar(host, parametro) {
     ].filter(Boolean).join("\n");
   }
 
-  function renderResultado(spec, datos) {
+  function abrirGraficoVentana(spec, datos, { enfocar = true } = {}) {
+    const hostGrafico = el("div");
+    const cfg = configGrafico(datos);
+    abrirVentana({
+      id: "inf-grafico",
+      titulo: `Distribución nula · ${spec.nombre}`,
+      tituloCorto: "Distribución nula",
+      subtitulo: cfg
+        ? `Referencia: ${nombreNula(datos.curva)}${datos.curva.aproximada ? " (aproximación)" : ""}`
+        : "Prueba exacta o sin distribución continua",
+      icono: "grafico",
+      tipo: "grafico",
+      alcance: "vista",
+      enfocar,
+      accionesCabecera: cfg
+        ? [boton("PNG", { variante: "fantasma", pequeno: true, icono: "imagen", onClick: (e) => exportar(spec, datos, "png", e.currentTarget) })]
+        : null,
+      contenido: hostGrafico,
+      pie: el(
+        "div",
+        { class: "fila", style: { gap: "6px" } },
+        boton("Resultados", { variante: "fantasma", pequeno: true, icono: "objetivo", onClick: () => abrirResultadosVentana(spec, datos) }),
+        boton("Detalle numérico", { variante: "fantasma", pequeno: true, icono: "tabla", onClick: () => abrirDetalleVentana(spec, datos) })
+      ),
+    });
+
+    if (cfg) {
+      dibujar(hostGrafico, cfg);
+      if (cfg.fueraDeRango !== null) {
+        const lado = cfg.fueraDeRango < Number(datos.curva.x[0]) ? "a la izquierda" : "a la derecha";
+        hostGrafico.append(
+          el("p", { class: "texto-tenue texto-pequeno" },
+            `El estadístico observado (${fmtNum(cfg.fueraDeRango)}) queda fuera del rango dibujado, ${lado}: ` +
+            (datos.rechaza ? "muy dentro de la región de rechazo." : "en la cola opuesta a la región de rechazo."))
+        );
+      }
+    } else {
+      hostGrafico.append(
+        alerta({
+          tipo: "info",
+          texto: datos.exacta
+            ? "Esta prueba es exacta: el p-valor se obtiene enumerando la distribución discreta del estadístico, sin curva continua de referencia."
+            : "Esta prueba no tiene una distribución nula continua que dibujar; la decisión se basa en el p-valor.",
+        })
+      );
+    }
+  }
+
+  function abrirDetalleVentana(spec, datos, { enfocar = true } = {}) {
+    const formula = leccion(spec.teoria)?.formula;
+    const formulaNodo = el("div", { class: "formula-card" }, el("span", { class: "formula-etiqueta" }, "Estadístico de referencia"));
+    const destinoFormula = el("div");
+    formulaNodo.append(destinoFormula);
+    if (formula) latex(destinoFormula, formula, { display: true });
+    else destinoFormula.textContent = spec.h0;
+
+    const extras = filasExtras(datos.extras);
+    const cuerpo = el(
+      "div",
+      { class: "pila" },
+      el(
+        "dl",
+        { class: "lista-definicion" },
+        el("div", {}, el("dt", {}, datos.simbolo ? `Estadístico ${datos.simbolo}` : "Estadístico"), el("dd", {}, fmtPreciso(datos.estadistico))),
+        el("div", {}, el("dt", {}, datos.exacta ? "p-valor (prueba exacta)" : "p-valor sin redondear"), el("dd", {}, fmtPreciso(datos.p_valor))),
+        el("div", {}, el("dt", {}, "α"), el("dd", {}, fmtNum(datos.alfa, { decimales: 4 }))),
+        datos.gl !== null && datos.gl !== undefined ? el("div", {}, el("dt", {}, "Grados de libertad"), el("dd", {}, textoGl(datos, 4))) : null,
+        datos.intervalo ? el("div", {}, el("dt", {}, etiquetaIntervalo(datos)), el("dd", {}, fmtIntervalo(datos.intervalo, { decimales: 6 }))) : null,
+        extras.map(([etiqueta, valor]) => el("div", {}, el("dt", {}, etiqueta), el("dd", {}, valor)))
+      ),
+      formulaNodo,
+      el(
+        "div",
+        { class: "pila pila--sm" },
+        el("strong", {}, "Supuestos y buenas prácticas"),
+        el("p", { class: "texto-articulo" }, spec.supuestos || "Revisa independencia, escala y tamaño de muestra antes de interpretar."),
+        el("p", { class: "texto-tenue texto-pequeno" }, "El p-valor es la probabilidad de observar un estadístico al menos tan extremo si H₀ fuese cierta. Rechazar H₀ no implica necesariamente un efecto grande.")
+      )
+    );
+
+    abrirVentana({
+      id: "inf-tabla",
+      titulo: `Detalle numérico · ${spec.nombre}`,
+      tituloCorto: "Detalle",
+      subtitulo: "Precisión completa, tamaños de efecto, fórmula y supuestos",
+      icono: "tabla",
+      tipo: "tabla",
+      alcance: "vista",
+      enfocar,
+      accionesCabecera: [
+        boton("Copiar", { variante: "fantasma", pequeno: true, icono: "copiar", onClick: () => copiar(resumenTexto(spec, datos)) }),
+      ],
+      contenido: cuerpo,
+      pie: el(
+        "div",
+        { class: "fila", style: { gap: "6px" } },
+        boton("Resultados", { variante: "fantasma", pequeno: true, icono: "objetivo", onClick: () => abrirResultadosVentana(spec, datos) }),
+        boton("Gráfico nula", { variante: "fantasma", pequeno: true, icono: "grafico", onClick: () => abrirGraficoVentana(spec, datos) }),
+        spec.teoria ? boton("Teoría", { variante: "fantasma", pequeno: true, icono: "teoria", onClick: () => abrirTeoriaVentana(spec.teoria, { alcance: "vista" }) }) : null
+      ),
+    });
+  }
+
+  function abrirResultadosVentana(spec, datos, { enfocar = true } = {}) {
     const verdicto = el(
       "div",
       { class: `veredicto ${datos.rechaza ? "veredicto--rechaza" : "veredicto--conserva"}` },
@@ -657,114 +722,70 @@ export async function montar(host, parametro) {
         : null
     );
 
-    const hostGrafico = el("div");
-    const cfg = configGrafico(datos);
-    setTimeout(() => {
-      if (cfg) {
-        dibujar(hostGrafico, cfg);
-        if (cfg.fueraDeRango !== null) {
-          const lado = cfg.fueraDeRango < Number(datos.curva.x[0]) ? "a la izquierda" : "a la derecha";
-          hostGrafico.append(
-            el("p", { class: "texto-tenue texto-pequeno" },
-              `El estadístico observado (${fmtNum(cfg.fueraDeRango)}) queda fuera del rango dibujado, ${lado}: ` +
-              (datos.rechaza ? "muy dentro de la región de rechazo." : "en la cola opuesta a la región de rechazo."))
-          );
-        }
-      } else {
-        hostGrafico.append(
-          el("p", { class: "texto-tenue texto-pequeno" },
-            datos.exacta
-              ? "Esta prueba es exacta: el p-valor se obtiene enumerando la distribución discreta del estadístico, sin una curva continua de referencia. La decisión se basa en comparar p con α."
-              : "Esta prueba no tiene una distribución nula continua que dibujar; la decisión se basa en el p-valor.")
-        );
-      }
-    }, 0);
-
-    const formula = leccion(spec.teoria)?.formula;
-    const formulaNodo = el("div", { class: "formula-card" }, el("span", { class: "formula-etiqueta" }, "Estadístico de referencia"));
-    const destinoFormula = el("div");
-    formulaNodo.append(destinoFormula);
-    if (formula) latex(destinoFormula, formula, { display: true });
-    else destinoFormula.textContent = spec.h0;
-
-    const extras = filasExtras(datos.extras);
-    const detallesPanel = panel({
-      titulo: "Detalle numérico",
-      icono: "tabla",
-      contenido: el(
-        "div",
-        { class: "pila" },
-        el(
-          "dl",
-          { class: "lista-definicion" },
-          el("div", {}, el("dt", {}, datos.simbolo ? `Estadístico ${datos.simbolo}` : "Estadístico"), el("dd", {}, fmtPreciso(datos.estadistico))),
-          // «sin redondear» ≠ «exacto»: solo se llama exacta a la prueba que lo es.
-          el("div", {}, el("dt", {}, datos.exacta ? "p-valor (prueba exacta)" : "p-valor sin redondear"), el("dd", {}, fmtPreciso(datos.p_valor))),
-          el("div", {}, el("dt", {}, "α"), el("dd", {}, fmtNum(datos.alfa, { decimales: 4 }))),
-          datos.gl !== null && datos.gl !== undefined ? el("div", {}, el("dt", {}, "Grados de libertad"), el("dd", {}, textoGl(datos, 4))) : null,
-          datos.intervalo ? el("div", {}, el("dt", {}, etiquetaIntervalo(datos)), el("dd", {}, fmtIntervalo(datos.intervalo, { decimales: 6 }))) : null,
-          extras.map(([etiqueta, valor]) => el("div", {}, el("dt", {}, etiqueta), el("dd", {}, valor)))
-        ),
-        formulaNodo
-      ),
-    });
-
-    const panelHipotesis = panel({
-      titulo: "Hipótesis y supuestos",
-      icono: "escudo",
-      contenido: el(
-        "div",
-        { class: "pila pila--sm" },
-        el("div", { class: "chips" }, el("span", { class: "chip chip--marca" }, `H₀: ${datos.hipotesis?.h0 || spec.h0}`), el("span", { class: "chip" }, `H₁: ${datos.hipotesis?.h1 || spec.h1}`)),
-        el("p", { class: "texto-articulo" }, spec.supuestos || "Revisa los supuestos antes de comunicar el resultado."),
-        datos.avisos?.length
-          ? el("div", { class: "pila pila--sm" }, datos.avisos.map((aviso) => alerta({ tipo: "aviso", texto: aviso })))
-          : alerta({ tipo: "ok", texto: "No se detectaron advertencias automáticas. Aun así, revisa el diseño y la independencia de las observaciones." })
-      ),
-    });
-
-    const panelInterpretacion = panel({
-      titulo: "Cómo leer este resultado",
-      icono: "info",
-      contenido: el(
-        "div",
-        { class: "pila pila--sm" },
-        el("p", { class: "texto-articulo" }, "El p-valor es la probabilidad de observar un estadístico al menos tan extremo como el calculado si H₀ fuese cierta. No es la probabilidad de que H₀ sea verdadera."),
-        el("p", { class: "texto-articulo" }, "Rechazar H₀ indica evidencia estadística de un efecto, no que el efecto sea grande o importante. Por eso se informa el intervalo y el tamaño del efecto."),
-        interpretarEfecto(datos.extras) ? el("p", { class: "texto-articulo" }, interpretarEfecto(datos.extras)) : null,
-        boton("Ver la lección completa", { variante: "secundario", pequeno: true, icono: "teoria", onClick: () => spec.teoria && navegar(`teoria/${spec.teoria}`) })
-      ),
-    });
-
-    const panelGrafico = panel({
-      titulo: "Distribución nula y región de rechazo",
-      subtitulo: cfg
-        ? `Referencia: ${nombreNula(datos.curva)}${datos.curva.aproximada ? " (aproximación asintótica)" : ""}. La zona sombreada es la región crítica para el α elegido; la línea marca el estadístico observado.`
-        : "Sin curva: prueba exacta o sin distribución de referencia continua.",
-      icono: "grafico",
-      contenido: hostGrafico,
-    });
-
-    const acciones = el(
+    const cuerpo = el(
       "div",
-      { class: "panel__acciones" },
-      boton("Copiar interpretación", { variante: "fantasma", pequeno: true, icono: "copiar", onClick: () => copiar(resumenTexto(spec, datos)) }),
-      ...botonesExportar(["pdf", "xlsx", "png", "csv"], (formato, nodo) => exportar(spec, datos, formato, nodo))
+      { class: "pila" },
+      verdicto,
+      kpis,
+      el("div", { class: "chips" },
+        el("span", { class: "chip chip--marca" }, `H₀: ${datos.hipotesis?.h0 || spec.h0}`),
+        el("span", { class: "chip" }, `H₁: ${datos.hipotesis?.h1 || spec.h1}`)
+      ),
+      datos.avisos?.length
+        ? el("div", { class: "pila pila--sm" }, datos.avisos.map((aviso) => alerta({ tipo: "aviso", texto: aviso })))
+        : alerta({ tipo: "ok", texto: "Sin advertencias automáticas. Revisa el diseño y la independencia de las observaciones." })
     );
 
-    const bloque = el(
+    const pie = el(
       "div",
-      { class: "pila resultado-prueba" },
-      panel({ titulo: "Resultado", icono: "objetivo", acciones, contenido: el("div", { class: "pila" }, verdicto, kpis) }),
-      el("div", { class: "rejilla rejilla--2" }, panelGrafico, panelHipotesis),
-      el("div", { class: "rejilla rejilla--2" }, panelInterpretacion, detallesPanel)
+      { class: "fila fila--entre", style: { width: "100%", flexWrap: "wrap", gap: "8px" } },
+      el(
+        "div",
+        { class: "fila", style: { gap: "6px", flexWrap: "wrap" } },
+        boton("Ver gráfico", { variante: "primario", pequeno: true, icono: "grafico", onClick: () => abrirGraficoVentana(spec, datos) }),
+        boton("Detalle numérico", { variante: "secundario", pequeno: true, icono: "tabla", onClick: () => abrirDetalleVentana(spec, datos) }),
+        spec.teoria
+          ? boton("Teoría", { variante: "fantasma", pequeno: true, icono: "teoria", onClick: () => abrirTeoriaVentana(spec.teoria, { alcance: "vista" }) })
+          : null
+      ),
+      el(
+        "div",
+        { class: "fila", style: { gap: "6px", flexWrap: "wrap" } },
+        boton("Copiar", { variante: "fantasma", pequeno: true, icono: "copiar", onClick: () => copiar(resumenTexto(spec, datos)) }),
+        ...botonesExportar(["pdf", "xlsx", "png", "csv"], (formato, nodo) => exportar(spec, datos, formato, nodo), { variante: "fantasma" })
+      )
     );
 
-    const anterior = contenido.querySelector(".resultado-prueba");
-    if (anterior) anterior.remove();
-    contenido.append(bloque);
-    renderMath(bloque);
-    bloque.scrollIntoView({ behavior: comportamientoScroll(), block: "nearest" });
+    abrirVentana({
+      id: "inf-resultados",
+      titulo: "Resultado",
+      tituloCorto: spec.nombre,
+      subtitulo: `${spec.nombre} · p = ${fmtP(datos.p_valor)}`,
+      icono: "objetivo",
+      tipo: "resultados",
+      alcance: "vista",
+      enfocar,
+      contenido: cuerpo,
+      pie,
+    });
+  }
+
+  function renderBarra(spec) {
+    if (!resultado) {
+      barraHost.replaceChildren();
+      return;
+    }
+    barraHost.replaceChildren(
+      barraResultados({
+        icono: "inferencia",
+        resumen: `${spec.nombre} · p = ${fmtP(resultado.p_valor)} · ${resultado.rechaza ? "Se rechaza H₀" : "No se rechaza H₀"}`,
+        botones: [
+          boton("Resultados", { variante: "primario", pequeno: true, icono: "objetivo", onClick: () => abrirResultadosVentana(spec, resultado) }),
+          boton("Gráfico nula", { variante: "secundario", pequeno: true, icono: "grafico", onClick: () => abrirGraficoVentana(spec, resultado) }),
+          boton("Detalle numérico", { variante: "secundario", pequeno: true, icono: "tabla", onClick: () => abrirDetalleVentana(spec, resultado) }),
+        ],
+      })
+    );
   }
 
   async function exportar(spec, datos, formato, botonNodo) {
@@ -824,27 +845,26 @@ export async function montar(host, parametro) {
 
   /* ------------------------- selección ------------------------- */
 
-  function seleccionar(clave) {
+  function seleccionar(clave, { inicial = false } = {}) {
     controlador?.abort();
+    if (!inicial) cerrarVentanasPorAlcance("vista");
     prueba = clave;
     resultado = null;
     history.replaceState(null, "", `#/inferencia/${clave}`);
     const spec = pruebas.find((p) => p.clave === clave);
+    specActual = spec;
     renderLista();
-    contenido.replaceChildren(
-      construirFormulario(spec),
-      renderInicial(spec)
-    );
+    formHost.replaceChildren(construirFormulario(spec));
+    barraHost.replaceChildren();
+    errorHost.replaceChildren();
     anunciar(`Prueba ${spec.nombre} seleccionada.`);
-    window.scrollTo({ top: 0, behavior: comportamientoScroll() });
+    if (!inicial) window.scrollTo({ top: 0, behavior: comportamientoScroll() });
   }
 
   renderLista();
-  seleccionar(prueba);
+  seleccionar(prueba, { inicial: true });
 
-  // Flujo cruzado desde descriptiva: rellenar y ejecutar una vez.
   if (transito.inferencia?.campos) {
-    const spec = pruebas.find((p) => p.clave === prueba);
     for (const [nombre, valor] of Object.entries(transito.inferencia.campos)) {
       campos[nombre]?.setValor(valorTexto(valor));
     }

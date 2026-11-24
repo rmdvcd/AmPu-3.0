@@ -144,14 +144,16 @@ test("lectura e identidad: estructura, accesibilidad, seguridad y diseño en Chr
       assert.equal(resultado.enlaces[2].rel, "noopener noreferrer");
     });
 
-    await t.test("los desplegables de distribución conservan los cuatro pasos y las matemáticas", async () => {
+    await t.test("la ficha de distribución en ventana emergente conserva los cuatro pasos y las matemáticas", async () => {
       await pagina.goto(`${url}#/distribuciones/normal`);
-      await pagina.getByText("Ejemplo resuelto", { exact: true }).click();
-      const ejemplo = pagina.locator(".lectura--compacta").first();
+      await pagina.getByRole("button", { name: "Ficha y ejemplo", exact: true }).click();
+      const ficha = pagina.locator("#capa-ventanas .ventana[data-ventana-id='ventana-ficha-modelo']");
+      await ficha.waitFor();
+      const ejemplo = ficha.locator(".lectura--compacta").first();
       assert.equal(await ejemplo.locator(".pasos-resueltos > li").count(), 4);
       assert.ok(await ejemplo.locator(".katex").count() > 0);
       assert.ok((await ejemplo.textContent()).includes("0,841345"));
-      assert.equal(await pagina.locator('summary:has-text("Ejemplo resuelto") [data-icono="ejemplo"]').count(), 1);
+      assert.equal(await ficha.locator('.ficha-seccion__titulo [data-icono="ejemplo"]').count(), 1);
     });
 
     await t.test("el buscador separa el título y la descripción, sin etiquetas redundantes", async () => {

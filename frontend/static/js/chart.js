@@ -927,6 +927,22 @@ export function graficoCaja(host, datos) {
   );
   details.append(el("div", { class: "tabla-scroll" }, el("table", {}, el("thead", {}, el("tr", {}, el("th", { scope: "col" }, "Elemento"), el("th", { scope: "col" }, "Valor"))), cuerpo)));
   host.append(details);
+
+  if (typeof ResizeObserver !== "undefined") {
+    if (host._observadorGrafico) host._observadorGrafico.disconnect();
+    let ultimoAncho = ancho;
+    const observador = new ResizeObserver(
+      debounce(() => {
+        const nuevo = Math.round(host.clientWidth || 0);
+        if (nuevo && Math.abs(nuevo - ultimoAncho) > 10) {
+          ultimoAncho = nuevo;
+          graficoCaja(host, datos);
+        }
+      }, 180)
+    );
+    observador.observe(host);
+    host._observadorGrafico = observador;
+  }
 }
 
 /* ------------------------------------------------------------------ */

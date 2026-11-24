@@ -7,7 +7,6 @@ import {
   kpi,
   tabla,
   alerta,
-  estadoVacio,
   toast,
   copiar,
   conCarga,
@@ -19,7 +18,6 @@ import {
   avisosMotor,
   segmentado,
   anunciar,
-  pliegue,
   botonesExportar,
 } from "../ui.js";
 import { fmtEntrada, leerNumero } from "../entrada.js";
@@ -32,11 +30,11 @@ import {
   transito,
 } from "../store.js";
 import { api, esCancelacion } from "../api.js";
+import { abrirVentana, cerrarVentanasPorAlcance, ventanasAbiertas, barraResultados } from "../ventanas.js";
+import { abrirTeoriaVentana } from "../teoria_dialogo.js";
 
-/** Texto para el campo a partir de números: coma decimal y un valor por posición. */
 const textoSerie = (valores, separador = " ") => valores.map((v) => fmtEntrada(v)).join(separador);
 
-/** Número de una celda de CSV, con la misma gramática que el resto de AmPu. */
 function numeroCelda(celda) {
   const lectura = leerNumero(celda);
   return lectura.error ? NaN : lectura.valor;
@@ -91,7 +89,6 @@ function parsearCSV(texto) {
       nombre: nombres[i] || `Columna ${i + 1}`,
       valores: numeros.filter(Number.isFinite),
       faltantes: valoresCrudos.filter((v) => !v).length,
-      // Celdas con texto que no es un número: se omiten, pero se dice cuántas y cuáles.
       descartadas: validos.filter((_, j) => !Number.isFinite(numeros[j])),
     });
   }
@@ -140,16 +137,17 @@ export async function montar(host) {
   let columnasArchivo = [];
   let temporizadorContador = null;
   let controlador = null;
-  let pestaña = "pegar";
-  let bins = null;
+  let bins = 12;
+  let vistaGrafico = "histograma";
+  let vistaTabla = "resumen";
 
   const campoDatos = campo({
     etiqueta: "Datos numéricos",
     tipo: "serie",
     valor: "",
-    filas: 9,
+    filas: 8,
     nombre: "datos",
-    ayuda: "Pega una columna de una hoja de cálculo o escribe los valores seguidos.",
+    ayuda: "Pega una columna o escribe valores separados por espacios, saltos de línea o punto y coma.",
     placeholder: "12,5 14 13,2 12 15 18 11 40",
     onInput: () => {
       actualizarContador();
@@ -165,9 +163,9 @@ export async function montar(host) {
     el(
       "div",
       { class: "fila fila--entre" },
-      el("span", { class: "texto-tenue texto-pequeno" }, "Bajo el cuadro ves cómo se han leído tus datos antes de calcular."),
+      el("span", { class: "texto-tenue texto-pequeno" }, "Comprueba el conteo antes de analizar."),
       contador
-    ),
+    )
   );
 
   const nombreArchivo = el("span", { class: "chip" }, "Ningún archivo");
@@ -187,14 +185,14 @@ export async function montar(host) {
       }
     },
   });
-  const informacionArchivo = el("p", { class: "texto-tenue texto-pequeno" }, "Formatos: CSV, TSV o TXT. Se detectan cabecera y columnas numéricas.");
+  const informacionArchivo = el("p", { class: "texto-tenue texto-pequeno" }, "Formatos: CSV, TSV o TXT.");
   const entradaArchivo = el("input", { type: "file", id: "archivo-datos", accept: ".csv,.tsv,.txt,text/csv,text/plain", hidden: true });
   const zonaArchivo = el(
     "label",
     { class: "zona-archivo", for: "archivo-datos", tabindex: "0" },
     icono("archivo", { tamano: 22 }),
     el("strong", {}, "Arrastra un CSV o haz clic para elegirlo"),
-    el("span", {}, "El archivo se lee en tu navegador. Al analizar, los valores se procesan en el motor local.")
+    el("span", {}, "Lectura local en el navegador.")
   );
   zonaArchivo.addEventListener("keydown", (e) => {
     if (e.key === "Enter" || e.key === " ") {
@@ -216,11 +214,7 @@ export async function montar(host) {
   const zonaEjemplo = el(
     "div",
     { class: "pila pila--sm" },
-    el(
-      "p",
-      {},
-      ejemplo?.descripcion || "Tiempos de atención con valores atípicos, útil para practicar el resumen y el diagrama de caja."
-    ),
+    el("p", {}, ejemplo?.descripcion || "Tiempos de atención con valores atípicos."),
     el(
       "div",
       { class: "chips" },
@@ -243,7 +237,7 @@ export async function montar(host) {
   const contenedorPestanas = el("div");
   const panelDatos = panel({
     titulo: "Tus datos",
-    subtitulo: "Todo ocurre en tu equipo. Nada se envía fuera.",
+    subtitulo: "Introduce los valores y pulsa Analizar para abrir resultados, gráficos y tablas en ventanas emergentes.",
     icono: "descriptiva",
     acciones: [
       boton("Limpiar", {
@@ -252,9 +246,13 @@ export async function montar(host) {
         icono: "limpiar",
         onClick: () => {
           campoDatos.setValor("");
+          campoDatos.limpiarError();
           actualizarContador();
           resultado = null;
-          renderInicial();
+          errorHost.replaceChildren();
+          renderBarra();
+          cerrarVentanasPorAlcance("vista");
+          estadoAnalisis.replaceChildren();
         },
       }),
     ],
@@ -267,19 +265,12 @@ export async function montar(host) {
   });
 
   const estadoAnalisis = el("span", { class: "calculando", role: "status", "aria-live": "polite" });
-  const accionesDatos = el(
-    "div",
-    { class: "fila fila--entre", style: { marginTop: "6px" } },
-    el("div", { class: "fila" }, botonAnalizar, estadoAnalisis),
-    el(
-      "span",
-      { class: "texto-tenue texto-pequeno" },
-      "Consejo: revisa los atípicos antes de calcular medias."
-    )
+  panelDatos.cuerpo.append(
+    el("div", { class: "fila", style: { marginTop: "6px" } }, botonAnalizar, estadoAnalisis)
   );
-  panelDatos.cuerpo.append(accionesDatos);
 
-  const resultadoHost = el("div", { class: "resultado", "aria-live": "polite" });
+  const barraHost = el("div", { "aria-live": "polite" });
+  const errorHost = el("div", { "aria-live": "polite" });
 
   host.append(
     el(
@@ -298,34 +289,27 @@ export async function montar(host) {
             icono("descriptiva", { tamano: 26 }),
             el("h1", { tabindex: "-1" }, "Describir un conjunto de datos")
           ),
-          el(
-            "p",
-            { class: "vista__subtitulo" },
-            VISTAS.descriptiva.subtitulo
-          )
+          el("p", { class: "vista__subtitulo" }, VISTAS.descriptiva.subtitulo)
         ),
         el(
           "div",
           { class: "vista__acciones" },
-          boton("Leer sobre descriptiva", {
+          boton("Teoría", {
             variante: "secundario",
             icono: "teoria",
-            onClick: () => navegar("teoria/descriptiva"),
+            onClick: () => abrirTeoriaVentana("descriptiva", { alcance: "vista" }),
           })
         )
       ),
       panelDatos,
-      resultadoHost
+      barraHost,
+      errorHost
     )
   );
 
   /* ------------------------- pestañas ------------------------- */
 
-  const zonas = {
-    pegar: zonaPegar,
-    archivo: zonaArchivoPanel,
-    ejemplo: zonaEjemplo,
-  };
+  const zonas = { pegar: zonaPegar, archivo: zonaArchivoPanel, ejemplo: zonaEjemplo };
   const selector = segmentado({
     etiqueta: "Modo de entrada de datos",
     valor: "pegar",
@@ -340,7 +324,6 @@ export async function montar(host) {
   const zonaPestana = panelDatos.cuerpo.querySelector(".zona-pestana");
 
   function fijarPestana(valor) {
-    pestaña = valor;
     selector.definir(valor);
     zonaPestana.replaceChildren(zonas[valor]);
     if (valor === "archivo") selectorColumna.envoltura.classList.remove("oculto");
@@ -348,7 +331,7 @@ export async function montar(host) {
   }
   fijarPestana("pegar");
 
-  /* ------------------------- contador y parseo ------------------------- */
+  /* ------------------------- contador y archivo ------------------------- */
 
   function actualizarContador() {
     clearTimeout(temporizadorContador);
@@ -361,12 +344,11 @@ export async function montar(host) {
     }, 120);
   }
 
-  /** Dice cuántas celdas no numéricas de la columna se han omitido (nunca en silencio). */
   function avisarDescartes(col) {
     const n = col.descartadas?.length || 0;
     if (!n) return;
     const muestra = col.descartadas.slice(0, 3).map((v) => `«${v}»`).join(", ");
-    informacionArchivo.textContent = `Columna «${col.nombre}»: se omitieron ${n} celda${n === 1 ? "" : "s"} que no son números (${muestra}${n > 3 ? "…" : ""}).`;
+    informacionArchivo.textContent = `Columna «${col.nombre}»: se omitieron ${n} celda${n === 1 ? "" : "s"} no numérica${n === 1 ? "" : "s"} (${muestra}${n > 3 ? "…" : ""}).`;
     toast(`Se omitieron ${n} celda${n === 1 ? "" : "s"} no numérica${n === 1 ? "" : "s"}`, { tipo: "aviso" });
   }
 
@@ -394,15 +376,11 @@ export async function montar(host) {
       selectorColumna.control.replaceChildren(
         ...datos.columnas.map((c) => el("option", { value: c.nombre }, `${c.nombre} (${c.valores.length})`))
       );
-      if (datos.columnas.length === 1) {
-        selectorColumna.setValor(datos.columnas[0].nombre);
-        campoDatos.setValor(textoSerie(datos.columnas[0].valores, "\n"));
-        informacionArchivo.textContent = `Se usó la única columna numérica. ${datos.filas} filas leídas.`;
-      } else {
-        informacionArchivo.textContent = `Se detectaron ${datos.columnas.length} columnas numéricas. Elige una para analizar.`;
-        campoDatos.setValor(textoSerie(datos.columnas[0].valores, "\n"));
-        selectorColumna.setValor(datos.columnas[0].nombre);
-      }
+      selectorColumna.setValor(datos.columnas[0].nombre);
+      campoDatos.setValor(textoSerie(datos.columnas[0].valores, "\n"));
+      informacionArchivo.textContent = datos.columnas.length === 1
+        ? `Columna única cargada (${datos.filas} filas).`
+        : `Se detectaron ${datos.columnas.length} columnas numéricas.`;
       avisarDescartes(datos.columnas[0]);
       actualizarContador();
       toast("Archivo leído correctamente", { tipo: "ok" });
@@ -411,15 +389,14 @@ export async function montar(host) {
     }
   }
 
-  /* Zona de arrastre */
-  ["dragenter", "dragover"].forEach((evento) =>
-    zonaArchivo.addEventListener(evento, (e) => {
+  ["dragenter", "dragover"].forEach((ev) =>
+    zonaArchivo.addEventListener(ev, (e) => {
       e.preventDefault();
       zonaArchivo.dataset.arrastrando = "true";
     })
   );
-  ["dragleave", "drop"].forEach((evento) =>
-    zonaArchivo.addEventListener(evento, (e) => {
+  ["dragleave", "drop"].forEach((ev) =>
+    zonaArchivo.addEventListener(ev, (e) => {
       e.preventDefault();
       zonaArchivo.dataset.arrastrando = "false";
     })
@@ -437,9 +414,13 @@ export async function montar(host) {
     estadoAnalisis.replaceChildren("Los datos cambiaron · vuelve a analizar");
   }
 
+  function alertaError(mensaje) {
+    errorHost.replaceChildren(alerta({ tipo: "error", titulo: "No se pudo analizar", texto: mensaje }));
+  }
+
   async function analizar() {
     campoDatos.limpiarError();
-    // Una lista JSON pegada ([1, 2.5, 3]) se convierte a la notación del campo, a la vista.
+    errorHost.replaceChildren();
     const crudo = campoDatos.texto();
     if (crudo.startsWith("[")) {
       try {
@@ -448,7 +429,7 @@ export async function montar(host) {
           campoDatos.setValor(textoSerie(lista));
         }
       } catch {
-        /* no era JSON: el lector normal explicará el problema */
+        /* lector normal */
       }
     }
     const lectura = campoDatos.lectura();
@@ -473,13 +454,14 @@ export async function montar(host) {
     controlador = new AbortController();
     botonAnalizar.cargando(true);
     estadoAnalisis.replaceChildren(el("span", { class: "pulso" }), "Calculando…");
-    resultadoHost.setAttribute("aria-busy", "true");
     try {
-      // Se envía el texto tal cual: el motor lo lee con la misma gramática y devuelve sus avisos.
       const datos = await api.post("/api/descriptiva", { datos: campoDatos.texto() }, { senal: controlador.signal });
       resultado = datos;
-      bins = null;
-      renderResultado();
+      bins = 12;
+      renderBarra();
+      abrirResultadosVentana();
+      if (ventanasAbiertas().some((v) => v.id === "desc-graficos")) abrirGraficosVentana({ enfocar: false });
+      if (ventanasAbiertas().some((v) => v.id === "desc-tablas")) abrirTablasVentana({ enfocar: false });
       registrarHistorial({
         titulo: `Descriptiva · n = ${datos.n}`,
         detalle: `Media ${fmtNum(datos.resumen.media)} · DE ${fmtNum(datos.resumen.desviacion)}`,
@@ -498,17 +480,10 @@ export async function montar(host) {
       }
     } finally {
       botonAnalizar.cargando(false);
-      resultadoHost.setAttribute("aria-busy", "false");
     }
   }
 
-  function alertaError(mensaje) {
-    const previo = resultadoHost.querySelector(".alerta--error");
-    if (previo) previo.remove();
-    resultadoHost.prepend(alerta({ tipo: "error", titulo: "No se pudo analizar", texto: mensaje }));
-  }
-
-  /* ------------------------- resultados ------------------------- */
+  /* ------------------------- ventanas emergentes ------------------------- */
 
   function resumenTexto(r = resultado) {
     const s = r.resumen;
@@ -524,24 +499,171 @@ export async function montar(host) {
     ].join("\n");
   }
 
-  function renderInicial() {
-    resultadoHost.replaceChildren(
-      panel({
-        titulo: "Sin análisis todavía",
-        icono: "info",
-        contenido: estadoVacio({
-          icono: "descriptiva",
-          titulo: "Pega una columna de números",
-          texto: "Introduce tus datos o abre la pestaña «Ejemplo», y pulsa «Analizar datos».",
-        }),
-      })
-    );
-  }
-
-  function renderResultado() {
+  function abrirGraficosVentana({ enfocar = true } = {}) {
+    if (!resultado) return;
     const r = resultado;
     const s = r.resumen;
-    const desactualizado = false;
+    const hostGrafico = el("div");
+    const etiquetaBins = el("span", { class: "chip" }, `${bins} intervalos`);
+    const rangoBins = el("input", {
+      type: "range",
+      min: "5",
+      max: "30",
+      step: "1",
+      value: String(bins),
+      "aria-label": "Número de intervalos del histograma",
+    });
+    const barraHist = el("div", { class: "fila", style: { gap: "8px" } }, etiquetaBins, rangoBins);
+
+    const pintar = () => {
+      barraHist.hidden = vistaGrafico !== "histograma";
+      if (vistaGrafico === "histograma") {
+        const hist = calcularHistograma(r.ordenados, bins);
+        if (!hist) return;
+        etiquetaBins.textContent = `${bins} intervalos`;
+        dibujar(hostGrafico, {
+          tipo: "barras",
+          series: [{ nombre: "Frecuencia", x: hist.centros, y: hist.conteos, tipo: "barra", color: "var(--grafico-1)" }],
+          xlabel: "Valor",
+          ylabel: "Frecuencia",
+          altura: 330,
+          yCero: true,
+          marcador: { x: s.media, etiqueta: "media" },
+          ariaLabel: "Histograma de frecuencias de la muestra",
+        });
+      } else if (vistaGrafico === "caja") {
+        graficoCaja(hostGrafico, { ...r.caja, atipicos: r.atipicos });
+      } else {
+        const ecdf = calcularECDF(r.ordenados);
+        if (!ecdf) return;
+        dibujar(hostGrafico, {
+          tipo: "linea",
+          series: [{ nombre: "Fₙ(x)", x: ecdf.x, y: ecdf.y, color: "var(--grafico-2)", escalon: true, marcadores: false, trazo: "" }],
+          xlabel: "x",
+          ylabel: "Proporción acumulada",
+          altura: 320,
+          dominioY: [0, 1],
+          ariaLabel: "Función de distribución empírica",
+        });
+      }
+    };
+
+    rangoBins.addEventListener("input", () => {
+      bins = Number(rangoBins.value);
+      pintar();
+    });
+
+    const control = segmentado({
+      etiqueta: "Tipo de gráfico",
+      valor: vistaGrafico,
+      opciones: [
+        ["histograma", "Histograma"],
+        ["caja", "Caja y bigotes"],
+        ["ecdf", "Acumulada (ECDF)"],
+      ],
+      onCambio: (nuevo) => {
+        vistaGrafico = nuevo;
+        pintar();
+      },
+    });
+
+    abrirVentana({
+      id: "desc-graficos",
+      titulo: `Gráficos · Descriptiva (n = ${r.n})`,
+      tituloCorto: "Gráficos",
+      subtitulo: "Histograma, diagrama de caja y distribución empírica",
+      icono: "grafico",
+      tipo: "grafico",
+      alcance: "vista",
+      enfocar,
+      accionesCabecera: [
+        boton("PNG", { variante: "fantasma", pequeno: true, icono: "imagen", onClick: (e) => exportar("png", e.currentTarget) }),
+      ],
+      contenido: el(
+        "div",
+        { class: "pila" },
+        el("div", { class: "fila fila--entre", style: { flexWrap: "wrap", gap: "8px" } }, control, barraHist),
+        hostGrafico
+      ),
+      pie: el(
+        "div",
+        { class: "fila", style: { gap: "6px" } },
+        boton("Resultados", { variante: "fantasma", pequeno: true, icono: "objetivo", onClick: () => abrirResultadosVentana() }),
+        boton("Tablas", { variante: "fantasma", pequeno: true, icono: "tabla", onClick: () => abrirTablasVentana() })
+      ),
+    });
+    pintar();
+  }
+
+  function abrirTablasVentana({ enfocar = true } = {}) {
+    if (!resultado) return;
+    const r = resultado;
+    const hostContenido = el("div");
+
+    const pintar = () => {
+      if (vistaTabla === "resumen") {
+        hostContenido.replaceChildren(tabla({ ...configTablaResumen(r), maximo: 40, total: 19 }));
+      } else if (vistaTabla === "frecuencias") {
+        hostContenido.replaceChildren(tabla({ ...r.frecuencias, maximo: 120, altura: "alta" }));
+      } else {
+        const atipicos = r.atipicos || [];
+        hostContenido.replaceChildren(
+          atipicos.length
+            ? el(
+                "div",
+                { class: "pila pila--sm" },
+                el("p", { class: "texto-tenue texto-pequeno" }, `Criterio de Tukey: fuera de ${fmtIntervalo(r.limites_atipicos)} (${r.n_atipicos ?? atipicos.length} detectados).`),
+                el("div", { class: "lista-atipicos", style: { maxHeight: "none" } }, atipicos.slice(0, 100).map((v) => el("span", { class: "valor-atipico" }, fmtNum(v)))),
+                el("p", { class: "texto-tenue texto-pequeno" }, "Un atípico no es necesariamente un error: puede reflejar un caso real o una distribución de cola pesada.")
+              )
+            : alerta({ tipo: "ok", texto: "No se detectaron valores atípicos con el criterio 1,5 · IQR." })
+        );
+      }
+    };
+
+    const control = segmentado({
+      etiqueta: "Vista de tabla",
+      valor: vistaTabla,
+      opciones: [
+        ["resumen", "Resumen (19)"],
+        ["frecuencias", "Frecuencias"],
+        ["atipicos", `Atípicos (${r.n_atipicos ?? (r.atipicos || []).length})`],
+      ],
+      onCambio: (nuevo) => {
+        vistaTabla = nuevo;
+        pintar();
+      },
+    });
+
+    abrirVentana({
+      id: "desc-tablas",
+      titulo: `Tablas · Descriptiva (n = ${r.n})`,
+      tituloCorto: "Tablas",
+      subtitulo: "Estadísticos completos, frecuencias y atípicos",
+      icono: "tabla",
+      tipo: "tabla",
+      alcance: "vista",
+      enfocar,
+      accionesCabecera: [
+        boton("Copiar", { variante: "fantasma", pequeno: true, icono: "copiar", onClick: () => copiar(resumenTexto()) }),
+        boton("CSV", { variante: "fantasma", pequeno: true, icono: "descargar", onClick: (e) => exportar("csv", e.currentTarget) }),
+        boton("Excel", { variante: "fantasma", pequeno: true, icono: "tabla", onClick: (e) => exportar("xlsx", e.currentTarget) }),
+      ],
+      contenido: el("div", { class: "pila" }, control, hostContenido),
+      pie: el(
+        "div",
+        { class: "fila", style: { gap: "6px" } },
+        boton("Resultados", { variante: "fantasma", pequeno: true, icono: "objetivo", onClick: () => abrirResultadosVentana() }),
+        boton("Gráficos", { variante: "fantasma", pequeno: true, icono: "grafico", onClick: () => abrirGraficosVentana() })
+      ),
+    });
+    pintar();
+  }
+
+  function abrirResultadosVentana({ enfocar = true } = {}) {
+    if (!resultado) return;
+    const r = resultado;
+    const s = r.resumen;
 
     const kpis = el(
       "div",
@@ -551,162 +673,92 @@ export async function montar(host) {
       kpi({ etiqueta: "Mediana", valor: fmtNum(s.mediana), detalle: "percentil 50" }),
       kpi({ etiqueta: "Desviación", valor: fmtNum(s.desviacion), detalle: "muestral (n−1)" }),
       kpi({ etiqueta: "Coef. variación", valor: s.cv !== null ? fmtPorcentaje(s.cv) : "—", detalle: "dispersión relativa" }),
-      kpi({ etiqueta: "Rango intercuartílico", valor: fmtNum(s.iqr), detalle: `Q1 ${fmtNum(s.q1)} · Q3 ${fmtNum(s.q3)}` }),
+      kpi({ etiqueta: "IQR", valor: fmtNum(s.iqr), detalle: `Q1 ${fmtNum(s.q1)} · Q3 ${fmtNum(s.q3)}` })
     );
 
-    const hostHistograma = el("div");
-    const etiquetaBins = el("span", { class: "chip" }, "");
-    const rangoBins = el("input", {
-      type: "range",
-      min: "5",
-      max: "30",
-      step: "1",
-      value: "12",
-      "aria-label": "Número de intervalos del histograma",
-    });
-
-    const pintarHistograma = () => {
-      const numeroBins = Number(rangoBins.value);
-      const hist = calcularHistograma(r.ordenados, numeroBins);
-      if (!hist) return;
-      etiquetaBins.textContent = `${numeroBins} intervalos`;
-      dibujar(hostHistograma, {
-        tipo: "barras",
-        series: [{ nombre: "Frecuencia", x: hist.centros, y: hist.conteos, tipo: "barra", color: "var(--grafico-1)" }],
-        xlabel: "Valor",
-        ylabel: "Frecuencia",
-        altura: 280,
-        yCero: true,
-        marcador: { x: s.media, etiqueta: "media" },
-        ariaLabel: "Histograma de frecuencias de la muestra",
-      });
-    };
-    rangoBins.addEventListener("input", () => {
-      bins = Number(rangoBins.value);
-      pintarHistograma();
-    });
-    setTimeout(pintarHistograma, 0);
-
-    const panelHistograma = panel({
-      titulo: "Histograma",
-      subtitulo: r.n > r.ordenados.length
-        ? `Calculado sobre una submuestra uniforme de ${fmtNum(r.ordenados.length, { entero: true })} valores.`
-        : "Ajusta los intervalos para observar la forma.",
-      icono: "histograma",
-      acciones: el("div", { class: "fila", style: { gap: "8px" } }, etiquetaBins, rangoBins),
-      contenido: hostHistograma,
-    });
-
-    const hostCaja = el("div");
-    setTimeout(() => {
-      graficoCaja(hostCaja, { ...r.caja, atipicos: r.atipicos });
-    }, 0);
-    const panelCaja = panel({
-      titulo: "Caja y bigotes",
-      subtitulo: "Los bigotes llegan al dato más extremo dentro de 1,5 · IQR; los puntos sueltos son candidatos a atípicos.",
-      icono: "caja",
-      contenido: hostCaja,
-    });
-
-    const panelStats = panel({
-      titulo: "Resumen completo",
-      subtitulo: "Todos los estadísticos en un solo lugar.",
-      icono: "tabla",
-      acciones: [
-        boton("Copiar", { variante: "fantasma", pequeno: true, icono: "copiar", onClick: () => copiar(resumenTexto()) }),
-        ...botonesExportar(["pdf", "xlsx", "png", "csv"], (formato, nodo) => exportar(formato, nodo), { variante: "fantasma" }),
-      ],
-      contenido: tabla({ ...configTablaResumen(r), maximo: 40, total: 19 }),
-    });
-
-    const atipicos = r.atipicos || [];
-    const panelAtipicos = panel({
-      titulo: "Valores atípicos",
-      subtitulo: `Criterio de Tukey: fuera de ${fmtIntervalo(r.limites_atipicos)}${(r.n_atipicos ?? 0) > (r.atipicos || []).length ? ` · ${r.n_atipicos} en total` : ""}`,
-      icono: "alerta",
-      contenido: atipicos.length
-        ? el(
-            "div",
-            { class: "pila pila--sm" },
-            el("div", { class: "lista-atipicos" }, atipicos.slice(0, 60).map((v) => el("span", { class: "valor-atipico" }, fmtNum(v)))),
-            el(
-              "p",
-              { class: "texto-tenue texto-pequeno" },
-              "Un atípico no es un error: puede ser un caso real, un registro mal medido o una señal de cola pesada. Investígalo antes de eliminarlo."
-            )
-          )
-        : el("p", { class: "texto-tenue texto-pequeno" }, "No se detectaron valores fuera de los bigotes con el criterio 1,5 · IQR.")
-    });
-
-    const panelFrecuencias = panel({
-      titulo: "Tabla de frecuencias",
-      subtitulo: "Útil con datos discretos o pocos valores distintos.",
-      icono: "tabla",
-      contenido: pliegue({
-        titulo: `Ver frecuencias (${fmtNum(r.frecuencias.total, { entero: true })} valores distintos)`,
-        contenido: tabla({ ...r.frecuencias, maximo: 60 }),
-      }),
-    });
-
-    const panelEcdf = panel({
-      titulo: "Distribución acumulada empírica",
-      subtitulo: "Proporción de observaciones menores o iguales que cada valor.",
-      icono: "grafico",
-      contenido: (() => {
-        const hostEcdf = el("div");
-        setTimeout(() => {
-          const ecdf = calcularECDF(r.ordenados);
-          if (!ecdf) return;
-          dibujar(hostEcdf, {
-            tipo: "linea",
-            // La función de distribución empírica es escalonada: salta 1/n en cada dato.
-            series: [{ nombre: "Fₙ(x)", x: ecdf.x, y: ecdf.y, color: "var(--grafico-2)", escalon: true, marcadores: false, trazo: "" }],
-            xlabel: "x",
-            ylabel: "Proporción acumulada",
-            altura: 230,
-            dominioY: [0, 1],
-            ariaLabel: "Función de distribución empírica",
-          });
-        }, 0);
-        return hostEcdf;
-      })(),
-    });
-
-    const acciones = el(
+    const cuerpo = el(
       "div",
-      { class: "grupo-botones" },
-      boton("Enviar a inferencia", {
-        variante: "secundario",
-        pequeno: true,
-        icono: "inferencia",
-        onClick: () => {
-          transito.inferencia = { prueba: "t_una", campos: { datos: r.ordenados } };
-          navegar("inferencia/t_una");
-        },
-      }),
-      boton("Probar ajuste de normalidad", {
-        variante: "fantasma",
-        pequeno: true,
-        icono: "simulacion",
-        onClick: () => {
-          transito.simulacion = { tipo: "ajuste", clave: "normal", datos: r.ordenados };
-          navegar("simulacion/ajuste");
-        },
-      })
-    );
-
-    resultadoHost.replaceChildren(
+      { class: "pila" },
+      alerta({ tipo: "info", titulo: "Lectura rápida", texto: r.interpretacion }),
+      avisosMotor(r.avisos),
+      kpis,
       el(
         "div",
-        { class: "pila" },
-        alerta({ tipo: "info", titulo: "Lectura rápida", texto: r.interpretacion }),
-        avisosMotor(r.avisos),
-        kpis,
-        el("div", { class: "rejilla rejilla--2" }, panelHistograma, panelCaja),
-        el("div", { class: "rejilla rejilla--2" }, panelStats, panelAtipicos),
-        el("div", { class: "rejilla rejilla--2" }, panelEcdf, panelFrecuencias),
-        el("div", { class: "fila fila--entre" }, acciones, el("span", { class: "texto-tenue texto-pequeno" }, r.nota))
+        { class: "fila fila--entre", style: { flexWrap: "wrap", gap: "8px" } },
+        el(
+          "div",
+          { class: "fila", style: { gap: "6px" } },
+          boton("Enviar a inferencia", {
+            variante: "secundario",
+            pequeno: true,
+            icono: "inferencia",
+            onClick: () => {
+              transito.inferencia = { prueba: "t_una", campos: { datos: r.ordenados } };
+              navegar("inferencia/t_una");
+            },
+          }),
+          boton("Probar normalidad", {
+            variante: "fantasma",
+            pequeno: true,
+            icono: "simulacion",
+            onClick: () => {
+              transito.simulacion = { tipo: "ajuste", clave: "normal", datos: r.ordenados };
+              navegar("simulacion/ajuste");
+            },
+          })
+        ),
+        r.nota ? el("span", { class: "texto-tenue texto-pequeno" }, r.nota) : null
       )
+    );
+
+    const pie = el(
+      "div",
+      { class: "fila fila--entre", style: { width: "100%", flexWrap: "wrap", gap: "8px" } },
+      el(
+        "div",
+        { class: "fila", style: { gap: "6px", flexWrap: "wrap" } },
+        boton("Ver gráficos", { variante: "primario", pequeno: true, icono: "grafico", onClick: () => abrirGraficosVentana() }),
+        boton("Ver tablas", { variante: "secundario", pequeno: true, icono: "tabla", onClick: () => abrirTablasVentana() }),
+        boton("Teoría", { variante: "fantasma", pequeno: true, icono: "teoria", onClick: () => abrirTeoriaVentana("descriptiva", { alcance: "vista" }) })
+      ),
+      el(
+        "div",
+        { class: "fila", style: { gap: "6px", flexWrap: "wrap" } },
+        boton("Copiar", { variante: "fantasma", pequeno: true, icono: "copiar", onClick: () => copiar(resumenTexto()) }),
+        ...botonesExportar(["pdf", "xlsx", "png", "csv"], (formato, nodo) => exportar(formato, nodo), { variante: "fantasma" })
+      )
+    );
+
+    abrirVentana({
+      id: "desc-resultados",
+      titulo: `Resultados · Descriptiva (n = ${r.n})`,
+      tituloCorto: `Resultados (n = ${r.n})`,
+      subtitulo: `Media ${fmtNum(s.media)} · Mediana ${fmtNum(s.mediana)} · DE ${fmtNum(s.desviacion)}`,
+      icono: "objetivo",
+      tipo: "resultados",
+      alcance: "vista",
+      enfocar,
+      contenido: cuerpo,
+      pie,
+    });
+  }
+
+  function renderBarra() {
+    if (!resultado) {
+      barraHost.replaceChildren();
+      return;
+    }
+    const r = resultado;
+    barraHost.replaceChildren(
+      barraResultados({
+        icono: "descriptiva",
+        resumen: `n = ${r.n} · Media = ${fmtNum(r.resumen.media)} · Mediana = ${fmtNum(r.resumen.mediana)}`,
+        botones: [
+          boton("Resultados", { variante: "primario", pequeno: true, icono: "objetivo", onClick: () => abrirResultadosVentana() }),
+          boton("Gráficos", { variante: "secundario", pequeno: true, icono: "grafico", onClick: () => abrirGraficosVentana() }),
+          boton("Tablas", { variante: "secundario", pequeno: true, icono: "tabla", onClick: () => abrirTablasVentana() }),
+        ],
+      })
     );
   }
 
@@ -748,13 +800,9 @@ export async function montar(host) {
     });
   }
 
-  renderInicial();
   actualizarContador();
 
   return () => {
     if (controlador) controlador.abort();
-    if (resultadoHost.querySelector(".grafico")?._observadorGrafico) {
-      resultadoHost.querySelectorAll(".grafico").forEach((g) => g._observadorGrafico?.disconnect());
-    }
   };
 }

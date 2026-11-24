@@ -319,18 +319,21 @@ test("navegación y formularios: menú, redundancias y controles completos", {
       assert.ok(await pagina.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1));
     });
 
-    await t.test("Limpiar en inferencia conserva los campos y un único estado de resultado", async (t) => {
+    await t.test("Limpiar en inferencia conserva los campos y cierra las ventanas de resultado", async (t) => {
       const pagina = await paginaPara(t, { ruta: "inferencia/t_una" });
       const muestra = pagina.getByRole("textbox", { name: /^Muestra/ });
       await muestra.fill("1 2 3 4");
       await pagina.getByRole("button", { name: "Limpiar", exact: true }).click();
       assert.equal(await muestra.inputValue(), "");
       assert.equal(await pagina.getByRole("button", { name: "Ejecutar prueba", exact: true }).isVisible(), true);
-      assert.equal(await pagina.locator(".resultado-prueba").count(), 1);
+      assert.equal(await pagina.locator(".resultado-prueba").count(), 0);
       await pagina.getByRole("button", { name: "Cargar ejemplo", exact: true }).click();
       assert.notEqual(await muestra.inputValue(), "");
+      await pagina.getByRole("button", { name: "Ejecutar prueba", exact: true }).click();
+      await pagina.locator("#capa-ventanas .ventana").waitFor();
       await pagina.getByRole("button", { name: "Limpiar", exact: true }).click();
-      assert.equal(await pagina.locator(".resultado-prueba").count(), 1);
+      assert.equal(await pagina.locator("#capa-ventanas .ventana").count(), 0);
+      assert.equal(await pagina.locator(".resultado-prueba").count(), 0);
       assert.equal(await pagina.getByRole("button", { name: "Ejecutar con el ejemplo", exact: true }).count(), 0);
     });
 

@@ -7,7 +7,6 @@ import {
   kpi,
   tabla,
   alerta,
-  estadoVacio,
   toast,
   copiar,
   conCarga,
@@ -18,18 +17,18 @@ import {
   errorEnCampo,
   textoError,
   avisosMotor,
+  pestanas,
   latex,
-  renderMath,
-  pliegue,
   anunciar,
   botonesExportar,
-  comportamientoScroll,
 } from "../ui.js";
 import { icono } from "../icons.js";
 import { dibujar } from "../chart.js";
 import { api, esCancelacion } from "../api.js";
-import { leerSerie, leerMatriz } from "../entrada.js";
-import { cargarMeta, navegar, registrarHistorial } from "../store.js";
+import { leerSerie, leerMatriz, fmtEntrada } from "../entrada.js";
+import { cargarMeta, registrarHistorial, transito } from "../store.js";
+import { abrirVentana, ventanasAbiertas, barraResultados } from "../ventanas.js";
+import { abrirTeoriaVentana } from "../teoria_dialogo.js";
 
 const EJEMPLO_SIMPLE = {
   y: "6,4 8,7 10,9 13,2 15,4 17,8 20,1 22,2 24,6 26,8 29,2 31,1",
@@ -42,18 +41,6 @@ const EJEMPLO_MULTIPLE = {
   predecir: "8,5 3,3\n11 3,8",
 };
 
-function normalizar(texto) {
-  return String(texto || "")
-    .toLocaleLowerCase("es")
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "");
-}
-
-/**
- * Lee los predictores con el mismo lector que el motor (coma o punto decimal;
- * espacios, punto y coma o salto de línea como separadores).
- * Lanza un Error con mensaje para el campo si la forma no encaja con n.
- */
 function parsearX(texto, n) {
   const lectura = leerMatriz(texto);
   if (lectura.error) throw new Error(lectura.error.mensaje);
@@ -97,7 +84,6 @@ function parsearPrediccion(texto, p) {
   return lineas;
 }
 
-/** Número para KaTeX: coma decimal sin espacio, potencias de diez explícitas. */
 function numLatex(valor, decimales = 4) {
   const v = Number(valor);
   if (!Number.isFinite(v)) return "\\text{—}";
@@ -152,55 +138,6 @@ function veredicto(p, alfa, siOk, siNo) {
   return `p = ${fmtP(p)} · ${p < alfa ? siNo : siOk}`;
 }
 
-/** Diagnóstico numérico de los supuestos: complementa (no sustituye) al gráfico de residuos. */
-function panelDiagnostico(respuesta) {
-  const d = respuesta.diagnostico || {};
-  const alfa = respuesta.bondad?.alfa ?? 0.05;
-  const dw = d.durbin_watson;
-  const lecturaDW =
-    dw === null || dw === undefined
-      ? "no calculable"
-      : `${fmtNum(dw, { decimales: 3 })} · ${dw < 1.5 ? "posible autocorrelación positiva" : dw > 2.5 ? "posible autocorrelación negativa" : "sin indicios de autocorrelación (≈ 2)"}`;
-  const filas = [
-    ["Normalidad de los residuos (Shapiro–Wilk)", veredicto(d.shapiro_p, alfa, "compatible con normalidad", "se aparta de la normalidad")],
-    ["Varianza constante (Breusch–Pagan)", veredicto(d.breusch_pagan_p, alfa, "sin indicios de heterocedasticidad", "la dispersión cambia con X")],
-    ["Independencia (Durbin–Watson)", lecturaDW],
-    ["Observaciones influyentes (Cook > 4/n)", d.influyentes?.length ? `n.º ${d.influyentes.join(", ")}` : "ninguna"],
-    ["Residuos atípicos (|estandarizado| > 3)", d.atipicos?.length ? `n.º ${d.atipicos.join(", ")}` : "ninguno"],
-  ];
-  if (Array.isArray(d.vif)) {
-    const maximo = Math.max(...d.vif);
-    filas.push([
-      "Colinealidad (VIF)",
-      `${d.vif.map((v) => fmtNum(v, { decimales: 2 })).join(" · ")} — ${maximo >= 10 ? "colinealidad grave" : maximo >= 5 ? "colinealidad apreciable" : "aceptable (< 5)"}`,
-    ]);
-  }
-  if (d.condicion !== null && d.condicion !== undefined) {
-    filas.push(["Número de condición", `${fmtNum(d.condicion, { decimales: 1 })}${d.condicion > 30 ? " — diseño mal condicionado" : ""}`]);
-  }
-  const residuos = respuesta.residuos || [];
-  const detalle = tabla({
-    columnas: ["N.º", "Observado", "Ajustado", "Residuo", "Res. estandarizado", "Apalancamiento", "Distancia de Cook"],
-    filas: residuos.map((r, i) => [i + 1, r.observado, r.ajustado, r.residuo, r.estandarizado, r.apalancamiento, r.cook]),
-    total: residuos.length,
-    formatos: Object.fromEntries(
-      ["Observado", "Ajustado", "Residuo", "Res. estandarizado", "Apalancamiento", "Distancia de Cook"].map((c) => [c, (v) => fmtNum(v, { decimales: 4 })])
-    ),
-    altura: 280,
-  });
-  return panel({
-    titulo: "Comprobación de supuestos",
-    subtitulo: `Contrastes al nivel α = ${fmtNum(alfa)}. Con muestras pequeñas tienen poca potencia: mira también el gráfico de residuos.`,
-    icono: "escudo",
-    contenido: el(
-      "div",
-      { class: "pila pila--sm" },
-      el("dl", { class: "lista-definicion" }, filas.map(([k, v]) => el("div", {}, el("dt", {}, k), el("dd", {}, v)))),
-      pliegue({ titulo: "Residuos, apalancamiento y distancia de Cook por observación", contenido: detalle })
-    ),
-  });
-}
-
 export async function montar(host) {
   try {
     await cargarMeta();
@@ -212,27 +149,36 @@ export async function montar(host) {
   let resultado = null;
   let predicciones = null;
   let controlador = null;
-  let pActual = 1;
+  let tabGraficoActiva = "ajuste";
+  let tabTablaActiva = "coeficientes";
+
+  const yInicial = transito.regresion?.y
+    ? transito.regresion.y.map((v) => fmtEntrada(v)).join(" ")
+    : EJEMPLO_SIMPLE.y;
+  const xInicial = transito.regresion?.x
+    ? transito.regresion.x.map((v) => fmtEntrada(v)).join(" ")
+    : EJEMPLO_SIMPLE.x;
+  transito.regresion = null;
 
   const campoY = campo({
     etiqueta: "Variable dependiente Y",
     codigo: "y",
     tipo: "serie",
     requerido: true,
-    valor: EJEMPLO_SIMPLE.y,
-    filas: 6,
+    valor: yInicial,
+    filas: 5,
     nombre: "y",
-    ayuda: "Una observación por valor, separadas por espacios o saltos de línea. Decimales con coma o punto (12,5 o 12.5).",
+    ayuda: "Valores separados por espacios o saltos de línea. Decimales con coma o punto.",
   });
   const campoX = campo({
     etiqueta: "Predictores X",
     codigo: "x",
     tipo: "matriz",
     requerido: true,
-    valor: EJEMPLO_SIMPLE.x,
-    filas: 6,
+    valor: xInicial,
+    filas: 5,
     nombre: "x",
-    ayuda: "Una fila por observación, columnas separadas por espacios. Una sola línea con n valores = un predictor; varias columnas = regresión múltiple.",
+    ayuda: "Una fila por observación (una sola línea = 1 predictor; varias columnas = regresión múltiple).",
   });
   const campoNombres = campo({
     etiqueta: "Nombres de predictores",
@@ -259,10 +205,12 @@ export async function montar(host) {
     opcional: true,
     filas: 3,
     nombre: "predecir",
-    ayuda: "Opcional. Una fila por predicción con el mismo número de predictores que X. Se devuelven el intervalo para la media y el de predicción.",
+    ayuda: "Opcional. Una fila por predicción con el mismo número de predictores que X.",
   });
+
   const diagnostico = el("span", { class: "chip chip--marca" }, "n = 12 · 1 predictor");
-  const resultadoHost = el("div", { "aria-live": "polite" });
+  const barraHost = el("div", { "aria-live": "polite" });
+  const errorHost = el("div", { "aria-live": "polite" });
   const botonCalcular = boton("Ajustar modelo", { icono: "reproducir", dataset: { accionPrimaria: "true" } });
   const estado = el("span", { class: "calculando" });
 
@@ -302,26 +250,12 @@ export async function montar(host) {
       campoPredecir.setValor(EJEMPLO_MULTIPLE.predecir);
     }
     actualizarDiagnostico();
-    resultado = null;
-    resultadoHost.replaceChildren(estadoInicial());
     toast("Ejemplo cargado", { tipo: "ok" });
-  }
-
-  function estadoInicial() {
-    return panel({
-      titulo: "Sin modelo todavía",
-      icono: "info",
-      contenido: estadoVacio({
-        icono: "regresion",
-        titulo: "Ajusta un modelo lineal",
-        texto: "Una columna de X ajusta un modelo simple; varias columnas, uno múltiple.",
-      }),
-    });
   }
 
   const formulario = panel({
     titulo: "Datos y configuración",
-    subtitulo: "Una fila por observación; conserva el mismo orden en X e Y.",
+    subtitulo: "Una columna de X ajusta regresión simple; varias columnas ajustan regresión múltiple.",
     icono: "regresion",
     acciones: [diagnostico],
     contenido: el(
@@ -340,21 +274,9 @@ export async function montar(host) {
           boton("Ejemplo múltiple", { variante: "fantasma", icono: "ejemplo", onClick: () => cargarEjemplo("multiple") })
         ),
         estado
-      ),
-      pliegue({
-        titulo: "Cómo interpretar R², coeficientes y residuos",
-        contenido: el(
-          "div",
-          { class: "pila pila--sm" },
-          el("p", { class: "texto-articulo" }, "Cada coeficiente estima el cambio medio de Y al aumentar una unidad su predictor, manteniendo el resto constante. El p-valor contrasta si ese coeficiente es distinto de cero."),
-          el("p", { class: "texto-articulo" }, "R² mide la proporción de variabilidad explicada; siempre aumenta al añadir predictores, por eso también se muestra el R² ajustado. Un modelo con R² alto puede tener residuos con estructura: revisa siempre el gráfico de residuos."),
-          el("p", { class: "texto-articulo" }, "La asociación no implica causalidad. No extrapoles fuera del rango observado sin justificarlo.")
-        ),
-      })
+      )
     ),
   });
-
-  /* ------------------------------ cálculo ------------------------------ */
 
   function validar() {
     let ok = true;
@@ -409,17 +331,17 @@ export async function montar(host) {
     return { y: y.valores, x, nombres: nombres || null, prediccion };
   }
 
-  async function calcular() {
+  async function calcular({ enfocarResultados = true } = {}) {
     const datos = validar();
     if (!datos) {
       toast("Revisa los campos marcados", { tipo: "error" });
       return;
     }
-    pActual = datos.x.p;
     if (controlador) controlador.abort();
     controlador = new AbortController();
     botonCalcular.cargando(true);
     estado.replaceChildren(el("span", { class: "pulso" }), "Ajustando…");
+    errorHost.replaceChildren();
     try {
       const respuesta = await api.post(
         "/api/regresion",
@@ -434,7 +356,10 @@ export async function montar(host) {
       );
       resultado = respuesta;
       predicciones = respuesta.predicciones;
-      renderResultado();
+      renderBarra();
+      abrirResultadosVentana({ enfocar: enfocarResultados });
+      if (ventanasAbiertas().some((v) => v.id === "reg-graficos")) abrirGraficosVentana({ enfocar: false });
+      if (ventanasAbiertas().some((v) => v.id === "reg-tablas")) abrirTablasVentana({ enfocar: false });
       estado.replaceChildren("Ajustado");
       registrarHistorial({
         titulo: "Regresión lineal",
@@ -447,29 +372,20 @@ export async function montar(host) {
     } catch (error) {
       if (!esCancelacion(error)) {
         const enCampo = errorEnCampo(error, { y: campoY, x: campoX, nombres: campoNombres, confianza: campoConfianza, predecir: campoPredecir });
-        resultado = null;
-        resultadoHost.replaceChildren(
-          panel({
-            titulo: "No se pudo ajustar el modelo",
-            icono: "alerta",
-            contenido: alerta({
-              tipo: "error",
-              titulo: error.tipo === "timeout" ? "El cálculo tardó demasiado" : enCampo ? "Revisa el campo marcado" : "Revisa los datos",
-              texto: textoError(error),
-            }),
+        errorHost.replaceChildren(
+          alerta({
+            tipo: "error",
+            titulo: error.tipo === "timeout" ? "El cálculo tardó demasiado" : enCampo ? "Revisa el campo marcado" : "No se pudo ajustar el modelo",
+            texto: textoError(error),
           })
         );
         anunciar(`Error: ${error.message}`);
       }
+      estado.replaceChildren("");
     } finally {
       botonCalcular.cargando(false);
-      if (!estado.textContent.includes("Ajustado")) estado.replaceChildren("");
     }
   }
-
-  botonCalcular.addEventListener("click", calcular);
-
-  /* ------------------------------ resultado ------------------------------ */
 
   function configAjuste(respuesta) {
     if (respuesta.predictores === 1 && respuesta.ajuste) {
@@ -481,7 +397,7 @@ export async function montar(host) {
         marcadores: true,
         xlabel: "X",
         ylabel: "Y",
-        altura: 290,
+        altura: 320,
         ariaLabel: "Diagrama de dispersión con la recta de regresión ajustada",
       };
     }
@@ -496,7 +412,7 @@ export async function montar(host) {
       ],
       xlabel: "Valor ajustado",
       ylabel: "Valor observado",
-      altura: 290,
+      altura: 320,
       ariaLabel: "Valores observados frente a valores ajustados",
     };
   }
@@ -513,157 +429,268 @@ export async function montar(host) {
       ],
       xlabel: "Valor ajustado",
       ylabel: "Residuo",
-      altura: 290,
+      altura: 310,
       yCero: true,
       ariaLabel: "Gráfico de residuos frente a valores ajustados",
     };
   }
 
-  function renderResultado() {
+  function abrirGraficosVentana({ enfocar = true } = {}) {
+    if (!resultado) return;
+    const hostAjuste = el("div");
+    const hostResiduos = el("div");
+
+    const tabs = pestanas({
+      etiqueta: "Gráficos de regresión",
+      activa: tabGraficoActiva,
+      items: [
+        {
+          clave: "ajuste",
+          titulo: resultado.predictores === 1 ? "Dispersión y recta" : "Observado vs ajustado",
+          icono: "regresion",
+          contenido: hostAjuste,
+        },
+        {
+          clave: "residuos",
+          titulo: "Residuos",
+          icono: "dispersion",
+          contenido: el("div", { class: "pila pila--sm" }, hostResiduos, el("p", { class: "texto-tenue texto-pequeno" }, "Busca dispersión sin forma: patrones curvos o embudos sugieren un modelo inadecuado.")),
+        },
+      ],
+      onCambio: (clave) => {
+        tabGraficoActiva = clave;
+        if (clave === "ajuste") dibujar(hostAjuste, configAjuste(resultado));
+        else dibujar(hostResiduos, configResiduos(resultado));
+      },
+    });
+
+    abrirVentana({
+      id: "reg-graficos",
+      titulo: "Gráficos · Regresión lineal",
+      tituloCorto: "Gráficos",
+      subtitulo: `R² = ${fmtNum(resultado.bondad.r2, { decimales: 4 })} · n = ${resultado.n}`,
+      icono: "grafico",
+      tipo: "grafico",
+      alcance: "vista",
+      enfocar,
+      accionesCabecera: [
+        boton("PNG", { variante: "fantasma", pequeno: true, icono: "imagen", onClick: (e) => exportar("png", e.currentTarget) }),
+      ],
+      contenido: tabs,
+      pie: el(
+        "div",
+        { class: "fila", style: { gap: "6px" } },
+        boton("Resultados", { variante: "fantasma", pequeno: true, icono: "objetivo", onClick: () => abrirResultadosVentana() }),
+        boton("Tablas y supuestos", { variante: "fantasma", pequeno: true, icono: "tabla", onClick: () => abrirTablasVentana() })
+      ),
+    });
+
+    if (tabGraficoActiva === "ajuste") dibujar(hostAjuste, configAjuste(resultado));
+    else dibujar(hostResiduos, configResiduos(resultado));
+  }
+
+  function abrirTablasVentana({ enfocar = true } = {}) {
+    if (!resultado) return;
     const bondad = resultado.bondad;
-    const kpis = el(
-      "div",
-      { class: "rejilla rejilla--kpi" },
-      kpi({ etiqueta: "R²", valor: fmtNum(bondad.r2, { decimales: 4 }), detalle: fmtPorcentaje(bondad.r2, 1) + " explicado", tono: "marca" }),
-      kpi({ etiqueta: "R² ajustado", valor: fmtNum(bondad.r2_ajustado, { decimales: 4 }), detalle: "penaliza predictores" }),
-      kpi({ etiqueta: "RMSE", valor: fmtNum(bondad.rmse, { decimales: 4 }), detalle: "error típico de residuo" }),
-      kpi({
-        etiqueta: `F(${bondad.gl_modelo}; ${bondad.gl_residual})`,
-        valor: fmtNum(bondad.f, { decimales: 3 }),
-        detalle: `p = ${fmtP(bondad.p_f)} · contraste global`,
-        titulo: "Contrasta si todos los coeficientes de los predictores son cero a la vez.",
-      }),
-      kpi({ etiqueta: "n", valor: fmtNum(resultado.n, { entero: true }), detalle: `${resultado.gl} grados de libertad residuales` }),
-      kpi({ etiqueta: "Confianza", valor: fmtPorcentaje(bondad.confianza, 0), detalle: "nivel de los intervalos" })
-    );
+    const d = resultado.diagnostico || {};
+    const alfa = bondad?.alfa ?? 0.05;
 
-    const formulaNodo = el("div", { class: "formula-card" }, el("span", { class: "formula-etiqueta" }, "Ecuación ajustada"));
-    const destinoFormula = el("div");
-    formulaNodo.append(destinoFormula);
-    latex(destinoFormula, ecuacionLatex(resultado), { display: true });
-
-    const filasCoef = resultado.coeficientes.map((c) => [
-      c.nombre,
-      c.estimacion,
-      c.error,
-      fmtIntervalo([c.ic_inferior, c.ic_superior], { decimales: 4 }),
-      c.p_valor,
-      c.significativo ? "✓ sí" : "no",
-    ]);
     const tablaCoef = tabla({
-      columnas: ["Término", "Estimación", "Error típ.", `IC ${fmtPorcentaje(bondad.confianza, 0)}`, "p-valor", `p < ${fmtNum(bondad.alfa ?? 0.05)}`],
-      filas: filasCoef,
-      total: filasCoef.length,
+      columnas: ["Término", "Estimación", "Error típ.", `IC ${fmtPorcentaje(bondad.confianza, 0)}`, "p-valor", `p < ${fmtNum(alfa)}`],
+      filas: resultado.coeficientes.map((c) => [
+        c.nombre,
+        c.estimacion,
+        c.error,
+        fmtIntervalo([c.ic_inferior, c.ic_superior], { decimales: 4 }),
+        c.p_valor,
+        c.significativo ? "✓ sí" : "no",
+      ]),
+      total: resultado.coeficientes.length,
       formatos: {
         Estimación: (v) => fmtNum(v, { decimales: 5 }),
         "Error típ.": (v) => fmtNum(v, { decimales: 5 }),
         "p-valor": (v) => fmtP(v),
       },
-      nota: `Contraste bilateral de cada coeficiente frente a cero con t de Student (${resultado.gl} g. l.). La asociación no implica causalidad.`,
+      nota: `Contraste bilateral de cada coeficiente frente a cero con t de Student (${resultado.gl} g. l.).`,
     });
 
-    const hostAjuste = el("div");
-    const hostResiduos = el("div");
-    setTimeout(() => {
-      dibujar(hostAjuste, configAjuste(resultado));
-      dibujar(hostResiduos, configResiduos(resultado));
-    }, 0);
-
-    const panelEcuacion = panel({
-      titulo: "Modelo ajustado",
-      subtitulo: resultado.conclusion,
-      icono: "regresion",
-      acciones: [
-        boton("Copiar ecuación", {
-          variante: "fantasma",
-          pequeno: true,
-          icono: "copiar",
-          onClick: () => copiar(`ŷ = ${ecuacionTexto(resultado)}`),
-        }),
-        ...botonesExportar(["pdf", "xlsx", "png", "csv"], (formato, nodo) => exportar(formato, nodo)),
-      ],
-      contenido: el(
-        "div",
-        { class: "pila" },
-        kpis,
-        formulaNodo,
-        alerta({ tipo: "info", texto: interpretarR2(bondad.r2) }),
-        avisosMotor(resultado.avisos)
-      ),
-    });
-
-    const paneles = [
-      panelEcuacion,
-      panel({ titulo: "Coeficientes", icono: "tabla", contenido: tablaCoef }),
-      el(
-        "div",
-        { class: "rejilla rejilla--2" },
-        panel({
-          titulo: resultado.predictores === 1 ? "Dispersión y recta" : "Observado frente a ajustado",
-          icono: "grafico",
-          contenido: hostAjuste,
-        }),
-        panel({
-          titulo: "Diagnóstico de residuos",
-          subtitulo: "Busca dispersión sin forma: patrones curvos o embudos sugieren un modelo inadecuado.",
-          icono: "grafico",
-          contenido: hostResiduos,
-        })
-      ),
+    const dw = d.durbin_watson;
+    const lecturaDW = dw === null || dw === undefined ? "no calculable" : `${fmtNum(dw, { decimales: 3 })} · ${dw < 1.5 ? "posible autocorrelación positiva" : dw > 2.5 ? "posible autocorrelación negativa" : "sin indicios de autocorrelación (≈ 2)"}`;
+    const filasSup = [
+      ["Normalidad de los residuos (Shapiro–Wilk)", veredicto(d.shapiro_p, alfa, "compatible con normalidad", "se aparta de la normalidad")],
+      ["Varianza constante (Breusch–Pagan)", veredicto(d.breusch_pagan_p, alfa, "sin indicios de heterocedasticidad", "la dispersión cambia con X")],
+      ["Independencia (Durbin–Watson)", lecturaDW],
+      ["Observaciones influyentes (Cook > 4/n)", d.influyentes?.length ? `n.º ${d.influyentes.join(", ")}` : "ninguna"],
+      ["Residuos atípicos (|estandarizado| > 3)", d.atipicos?.length ? `n.º ${d.atipicos.join(", ")}` : "ninguno"],
     ];
+    if (Array.isArray(d.vif)) {
+      const maximo = Math.max(...d.vif);
+      filasSup.push(["Colinealidad (VIF)", `${d.vif.map((v) => fmtNum(v, { decimales: 2 })).join(" · ")} — ${maximo >= 10 ? "colinealidad grave" : maximo >= 5 ? "colinealidad apreciable" : "aceptable (< 5)"}`]);
+    }
+    if (d.condicion !== null && d.condicion !== undefined) {
+      filasSup.push(["Número de condición", `${fmtNum(d.condicion, { decimales: 1 })}${d.condicion > 30 ? " — diseño mal condicionado" : ""}`]);
+    }
+    const panelSupuestos = el(
+      "div",
+      { class: "pila pila--sm" },
+      el("dl", { class: "lista-definicion" }, filasSup.map(([k, v]) => el("div", {}, el("dt", {}, k), el("dd", {}, v)))),
+      el("p", { class: "texto-tenue texto-pequeno" }, resultado.nota || "Revisa linealidad, independencia, homocedasticidad y normalidad aproximada de los residuos.")
+    );
 
-    paneles.push(panelDiagnostico(resultado));
+    const residuos = resultado.residuos || [];
+    const tablaResiduos = tabla({
+      columnas: ["N.º", "Observado", "Ajustado", "Residuo", "Res. estandarizado", "Apalancamiento", "Cook"],
+      filas: residuos.map((r, i) => [i + 1, r.observado, r.ajustado, r.residuo, r.estandarizado, r.apalancamiento, r.cook]),
+      total: residuos.length,
+      formatos: Object.fromEntries(["Observado", "Ajustado", "Residuo", "Res. estandarizado", "Apalancamiento", "Cook"].map((c) => [c, (v) => fmtNum(v, { decimales: 4 })])),
+      altura: 300,
+    });
 
+    const items = [
+      { clave: "coeficientes", titulo: "Coeficientes", icono: "tabla", contenido: tablaCoef },
+      { clave: "supuestos", titulo: "Supuestos", icono: "escudo", contenido: panelSupuestos },
+      { clave: "residuos", titulo: "Observaciones y Cook", icono: "lista", contenido: tablaResiduos },
+    ];
     if (predicciones?.length) {
       const nivel = fmtPorcentaje(bondad.confianza, 0);
       const hayExtrapolacion = predicciones.some((p) => p.extrapola);
-      paneles.push(
-        panel({
-          titulo: "Predicciones",
-          subtitulo: `Intervalos al ${nivel}`,
-          icono: "objetivo",
-          contenido: el(
-            "div",
-            { class: "pila pila--sm" },
-            tabla({
-              columnas: ["Fila", "Predicción", `IC ${nivel} de la media`, `Intervalo de predicción ${nivel}`, "Rango de datos"],
-              filas: predicciones.map((p) => [
-                p.fila,
-                fmtNum(p.prediccion, { decimales: 5 }),
-                fmtIntervalo(p.ic_media, { decimales: 4 }),
-                fmtIntervalo(p.ic_prediccion, { decimales: 4 }),
-                p.extrapola ? "⚠ fuera (extrapola)" : "dentro",
-              ]),
-              total: predicciones.length,
-              nota: "El IC de la media acota el valor medio de Y para esos predictores; el intervalo de predicción acota una observación nueva y por eso es más ancho.",
-            }),
-            hayExtrapolacion
-              ? alerta({ tipo: "aviso", titulo: "Hay extrapolación", texto: "Alguna fila queda fuera del rango de X observado. El modelo no está respaldado por datos en esa zona y los intervalos no reflejan ese riesgo." })
-              : null
-          ),
-        })
-      );
-    }
-
-    paneles.push(
-      panel({
-        titulo: "Lectura crítica",
-        icono: "escudo",
+      items.push({
+        clave: "predicciones",
+        titulo: `Predicciones (${predicciones.length})`,
+        icono: "objetivo",
         contenido: el(
           "div",
           { class: "pila pila--sm" },
-          el("p", { class: "texto-articulo" }, resultado.nota),
-          el("p", { class: "texto-articulo" }, "Comprueba linealidad, independencia, homocedasticidad y normalidad aproximada de los residuos. Un R² alto no corrige un diseño sesgado ni un modelo mal especificado.")
+          tabla({
+            columnas: ["Fila", "Predicción", `IC ${nivel} media`, `IC ${nivel} predicción`, "Rango"],
+            filas: predicciones.map((p) => [
+              p.fila,
+              fmtNum(p.prediccion, { decimales: 5 }),
+              fmtIntervalo(p.ic_media, { decimales: 4 }),
+              fmtIntervalo(p.ic_prediccion, { decimales: 4 }),
+              p.extrapola ? "⚠ fuera (extrapola)" : "dentro",
+            ]),
+            total: predicciones.length,
+          }),
+          hayExtrapolacion
+            ? alerta({ tipo: "aviso", titulo: "Hay extrapolación", texto: "Alguna fila queda fuera del rango de X observado." })
+            : null
         ),
-      })
+      });
+    } else if (tabTablaActiva === "predicciones") {
+      tabTablaActiva = "coeficientes";
+    }
+
+    const tabs = pestanas({
+      etiqueta: "Tablas y diagnóstico de regresión",
+      activa: tabTablaActiva,
+      items,
+      onCambio: (c) => { tabTablaActiva = c; },
+    });
+
+    abrirVentana({
+      id: "reg-tablas",
+      titulo: "Tablas y diagnóstico · Regresión",
+      tituloCorto: "Tablas",
+      subtitulo: `n = ${resultado.n} · ${resultado.gl} g. l. residuales`,
+      icono: "tabla",
+      tipo: "tabla",
+      alcance: "vista",
+      enfocar,
+      contenido: tabs,
+      pie: el(
+        "div",
+        { class: "fila", style: { gap: "6px" } },
+        boton("Resultados", { variante: "fantasma", pequeno: true, icono: "objetivo", onClick: () => abrirResultadosVentana() }),
+        boton("Gráficos", { variante: "fantasma", pequeno: true, icono: "grafico", onClick: () => abrirGraficosVentana() })
+      ),
+    });
+  }
+
+  function abrirResultadosVentana({ enfocar = true } = {}) {
+    if (!resultado) return;
+    const bondad = resultado.bondad;
+    const formulaNodo = el("div", { class: "formula-card" }, el("span", { class: "formula-etiqueta" }, "Ecuación ajustada"));
+    const destinoFormula = el("div");
+    formulaNodo.append(destinoFormula);
+    latex(destinoFormula, ecuacionLatex(resultado), { display: true });
+
+    const kpis = el(
+      "div",
+      { class: "rejilla rejilla--kpi" },
+      kpi({ etiqueta: "R²", valor: fmtNum(bondad.r2, { decimales: 4 }), detalle: `${fmtPorcentaje(bondad.r2, 1)} explicado`, tono: "marca" }),
+      kpi({ etiqueta: "R² ajustado", valor: fmtNum(bondad.r2_ajustado, { decimales: 4 }), detalle: "penaliza predictores" }),
+      kpi({ etiqueta: "RMSE", valor: fmtNum(bondad.rmse, { decimales: 4 }), detalle: "error típico de residuo" }),
+      kpi({ etiqueta: `F(${bondad.gl_modelo}; ${bondad.gl_residual})`, valor: fmtNum(bondad.f, { decimales: 3 }), detalle: `p = ${fmtP(bondad.p_f)} · contraste global` }),
+      kpi({ etiqueta: "n", valor: fmtNum(resultado.n, { entero: true }), detalle: `${resultado.gl} g. l. residuales` }),
+      kpi({ etiqueta: "Confianza", valor: fmtPorcentaje(bondad.confianza, 0), detalle: "nivel de intervalos" })
     );
 
-    resultadoHost.replaceChildren(el("div", { class: "pila" }, paneles));
-    renderMath(resultadoHost);
-    resultadoHost.scrollIntoView({ behavior: comportamientoScroll(), block: "nearest" });
+    const cuerpo = el(
+      "div",
+      { class: "pila" },
+      formulaNodo,
+      kpis,
+      alerta({ tipo: "info", titulo: resultado.conclusion, texto: interpretarR2(bondad.r2) }),
+      predicciones?.length
+        ? alerta({
+            tipo: "ok",
+            titulo: `${predicciones.length} ${predicciones.length === 1 ? "predicción calculada" : "predicciones calculadas"}`,
+            texto: predicciones.slice(0, 2).map((p) => `Fila ${p.fila}: ŷ = ${fmtNum(p.prediccion, { decimales: 4 })} (IC ${fmtIntervalo(p.ic_prediccion, { decimales: 3 })})`).join(" · "),
+          })
+        : null,
+      avisosMotor(resultado.avisos)
+    );
+
+    const pie = el(
+      "div",
+      { class: "fila fila--entre", style: { width: "100%", flexWrap: "wrap", gap: "8px" } },
+      el(
+        "div",
+        { class: "fila", style: { gap: "6px", flexWrap: "wrap" } },
+        boton("Ver gráficos", { variante: "primario", pequeno: true, icono: "grafico", onClick: () => abrirGraficosVentana() }),
+        boton("Tablas y supuestos", { variante: "secundario", pequeno: true, icono: "tabla", onClick: () => abrirTablasVentana() }),
+        boton("Teoría", { variante: "fantasma", pequeno: true, icono: "teoria", onClick: () => abrirTeoriaVentana("regresion", { alcance: "vista" }) })
+      ),
+      el(
+        "div",
+        { class: "fila", style: { gap: "6px", flexWrap: "wrap" } },
+        boton("Copiar ecuación", { variante: "fantasma", pequeno: true, icono: "copiar", onClick: () => copiar(`ŷ = ${ecuacionTexto(resultado)}`) }),
+        ...botonesExportar(["pdf", "xlsx", "png", "csv"], (formato, nodo) => exportar(formato, nodo), { variante: "fantasma" })
+      )
+    );
+
+    abrirVentana({
+      id: "reg-resultados",
+      titulo: "Modelo ajustado",
+      tituloCorto: "Resultados",
+      subtitulo: `R² = ${fmtNum(bondad.r2, { decimales: 4 })} · RMSE = ${fmtNum(bondad.rmse, { decimales: 4 })}`,
+      icono: "regresion",
+      tipo: "resultados",
+      alcance: "vista",
+      enfocar,
+      contenido: cuerpo,
+      pie,
+    });
+  }
+
+  function renderBarra() {
+    if (!resultado) { barraHost.replaceChildren(); return; }
+    barraHost.replaceChildren(
+      barraResultados({
+        icono: "regresion",
+        resumen: `Modelo ajustado · R² = ${fmtNum(resultado.bondad.r2, { decimales: 4 })} · p(F) = ${fmtP(resultado.bondad.p_f)}`,
+        botones: [
+          boton("Resultados", { variante: "primario", pequeno: true, icono: "objetivo", onClick: () => abrirResultadosVentana() }),
+          boton("Gráficos", { variante: "secundario", pequeno: true, icono: "grafico", onClick: () => abrirGraficosVentana() }),
+          boton("Tablas y supuestos", { variante: "secundario", pequeno: true, icono: "tabla", onClick: () => abrirTablasVentana() }),
+        ],
+      })
+    );
   }
 
   async function exportar(formato, botonNodo) {
+    if (!resultado) return;
     const cfg = configAjuste(resultado);
     const tablas = [
       {
@@ -710,12 +737,7 @@ export async function montar(host) {
             titulo: "Ajuste del modelo",
           },
           vista: "regresion",
-          estado: {
-            y: campoY.texto(),
-            x: campoX.texto(),
-            nombres: campoNombres.texto(),
-            confianza: campoConfianza.valor(),
-          },
+          estado: { y: campoY.texto(), x: campoX.texto(), nombres: campoNombres.texto(), confianza: campoConfianza.valor() },
         });
         toast(`Archivo ${formato.toUpperCase()} generado`, { tipo: "ok" });
       } catch (error) {
@@ -723,6 +745,8 @@ export async function montar(host) {
       }
     });
   }
+
+  botonCalcular.addEventListener("click", () => calcular({ enfocarResultados: true }));
 
   host.append(
     el(
@@ -741,24 +765,23 @@ export async function montar(host) {
             icono("regresion", { tamano: 26 }),
             el("h1", { tabindex: "-1" }, "Regresión lineal")
           ),
-          el(
-            "p",
-            { class: "vista__subtitulo" },
-            VISTAS.regresion.subtitulo
-          )
+          el("p", { class: "vista__subtitulo" }, VISTAS.regresion.subtitulo)
         ),
         el(
           "div",
           { class: "vista__acciones" },
-          boton("Guía de regresión", { variante: "secundario", icono: "teoria", onClick: () => navegar("teoria/regresion") })
+          boton("Teoría", {
+            variante: "secundario",
+            icono: "teoria",
+            onClick: () => abrirTeoriaVentana("regresion", { alcance: "vista" }),
+          })
         )
       ),
-      el("div", { class: "pila" }, formulario, resultadoHost)
+      el("div", { class: "pila" }, formulario, barraHost, errorHost)
     )
   );
 
   actualizarDiagnostico();
-  resultadoHost.append(estadoInicial());
 
   return () => {
     if (controlador) controlador.abort();

@@ -57,7 +57,9 @@ class NavegacionTest(unittest.TestCase):
         for archivo in base.rglob("*.js"):
             texto = archivo.read_text(encoding="utf-8")
             # /api/teoria/lista es una API, no un enlace de navegación.
-            for destino in re.findall(r"(?<!api/)\bteoria/([a-z_]+)", texto):
+            hallados = re.findall(r"(?<!api/)\bteoria/([a-z_]+)", texto)
+            hallados += re.findall(r'\babrirTeoriaVentana\(\s*["\']([a-z_]+)["\']', texto)
+            for destino in hallados:
                 with self.subTest(archivo=archivo.name, destino=destino):
                     self.assertIn(destino, claves)
                 destinos.add(destino)

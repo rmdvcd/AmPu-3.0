@@ -8,25 +8,23 @@ import {
   tabla,
   alerta,
   textoError,
-  estadoVacio,
   toast,
   copiar,
   conCarga,
   fmtNum,
   fmtPorcentaje,
   latex,
-  renderMath,
   segmentado,
   iconoBoton,
-  pliegue,
   anunciar,
   botonesExportar,
-  comportamientoScroll,
 } from "../ui.js";
 import { icono } from "../icons.js";
 import { dibujar } from "../chart.js";
 import { api, esCancelacion } from "../api.js";
-import { cargarMeta, navegar, registrarHistorial, transito } from "../store.js";
+import { cargarMeta, registrarHistorial, transito } from "../store.js";
+import { abrirVentana, cerrarVentana, cerrarVentanasPorAlcance, ventanasAbiertas, barraResultados } from "../ventanas.js";
+import { abrirTeoriaVentana } from "../teoria_dialogo.js";
 
 const TIPOS_TAMANO = [
   { clave: "proporcion", nombre: "Una proporción", descripcion: "¿Qué porcentaje de la población cumple una condición?" },
@@ -71,6 +69,7 @@ export async function montar(host, parametro) {
   let metodo = metodos.some((m) => m.clave === parametro) ? parametro : "finito";
   let tipoTamano = transito.muestreo?.tipoTamano || "proporcion";
   let resultadoTamano = null;
+  let payloadTamano = null;
   let resultadoMuestra = null;
   let controladorTamano = null;
   let controladorMuestra = null;
@@ -82,7 +81,8 @@ export async function montar(host, parametro) {
 
   const contenedorTipo = el("div", { class: "rejilla rejilla--herramientas" });
   const contenedorCamposTamano = el("div", { class: "pila" });
-  const resultadoTamanoHost = el("div", { "aria-live": "polite" });
+  const barraTamanoHost = el("div", { "aria-live": "polite" });
+  const errorTamanoHost = el("div", { "aria-live": "polite" });
   let camposTamano = {};
   const campoConfianzaTamano = campo({
     etiqueta: "Nivel de confianza",
@@ -105,7 +105,7 @@ export async function montar(host, parametro) {
     valor: "",
     min: 1,
     opcional: true,
-    ayuda: "Opcional. Si la población es finita, el cálculo aplica corrección por población finita.",
+    ayuda: "Opcional. Aplica corrección por población finita.",
   });
   const botonTamano = boton("Calcular n", { icono: "reproducir", dataset: { accionPrimaria: "true" } });
   const estadoTamano = el("span", { class: "calculando" });
@@ -115,14 +115,7 @@ export async function montar(host, parametro) {
     camposTamano = {};
     const definiciones = [];
     if (tipoTamano === "proporcion") {
-      definiciones.push({
-        id: "p",
-        etiqueta: "Proporción esperada p",
-        valor: 0.5,
-        min: 0.0001,
-        max: 0.9999,
-        ayuda: "Si no tienes una estimación previa, usa 0,5 (escenario más conservador).",
-      });
+      definiciones.push({ id: "p", etiqueta: "Proporción esperada p", valor: 0.5, min: 0.0001, max: 0.9999, ayuda: "Usa 0,5 si no tienes estimación previa." });
     } else if (tipoTamano === "media") {
       definiciones.push({ id: "sigma", etiqueta: "Desviación estándar σ", valor: 10, min: 0.0001 });
     } else if (tipoTamano === "diferencia_medias") {
@@ -138,13 +131,8 @@ export async function montar(host, parametro) {
       return c.envoltura;
     });
     contenedorCamposTamano.append(
-      el("div", { class: "columnas-formulario" }, nodos.length ? nodos : []),
-      el(
-        "div",
-        { class: "rejilla rejilla--2", style: { alignItems: "end" } },
-        campoConfianzaTamano.envoltura,
-        campoError.envoltura
-      ),
+      el("div", { class: "columnas-formulario" }, nodos),
+      el("div", { class: "rejilla rejilla--2", style: { alignItems: "end" } }, campoConfianzaTamano.envoltura, campoError.envoltura),
       campoPoblacionTamano.envoltura
     );
     campoPoblacionTamano.envoltura.hidden = tipoTamano.startsWith("diferencia_");
@@ -163,7 +151,10 @@ export async function montar(host, parametro) {
             onClick: () => {
               tipoTamano = tipo.clave;
               resultadoTamano = null;
-              resultadoTamanoHost.replaceChildren();
+              payloadTamano = null;
+              barraTamanoHost.replaceChildren();
+              errorTamanoHost.replaceChildren();
+              cerrarVentana("mues-tamano");
               renderTiposTamano();
               construirCamposTamano();
             },
@@ -195,7 +186,7 @@ export async function montar(host, parametro) {
     const error = campoError.valor();
     const proporcion = tipoTamano.includes("proporcion");
     if (typeof error !== "number" || !Number.isFinite(error) || error <= 0 || (proporcion && error >= 1)) {
-      campoError.setError(proporcion ? "El margen debe estar entre 0 y 1 (por ejemplo, 0,05)." : "El margen debe ser mayor que cero, en unidades de la variable.");
+      campoError.setError(proporcion ? "El margen debe estar entre 0 y 1 (por ejemplo, 0,05)." : "El margen debe ser mayor que cero.");
       ok = false;
     }
     const N = tipoTamano.startsWith("diferencia_") ? null : campoPoblacionTamano.valor();
@@ -204,6 +195,79 @@ export async function montar(host, parametro) {
       ok = false;
     }
     return ok;
+  }
+
+  function usarNCalculado() {
+    if (!resultadoTamano || !payloadTamano) return;
+    const conPoblacion = payloadTamano.N !== null && payloadTamano.N !== undefined;
+    if (metodo === "conglomerados") {
+      metodo = "finito";
+      history.replaceState(null, "", "#/muestreo/finito");
+      construirFormularioMuestra();
+    }
+    fijarNAutomatico(false);
+    camposMuestra.n.setValor(resultadoTamano.n);
+    camposMuestra.n.limpiarError();
+    if (conPoblacion && !camposMuestra.N.control.disabled) camposMuestra.N.setValor(payloadTamano.N);
+    resultadoMuestra = null;
+    barraMuestraHost.replaceChildren();
+    estadoMuestra.replaceChildren();
+    actualizarResumen();
+    cerrarVentana("mues-tamano");
+    toast(`n = ${resultadoTamano.n} trasladado al diseño de selección.`, { tipo: "ok" });
+  }
+
+  function abrirTamanoVentana({ enfocar = true } = {}) {
+    if (!resultadoTamano || !payloadTamano) return;
+    const datos = resultadoTamano;
+    const payload = payloadTamano;
+    const nodoFormula = el("div", { class: "formula-card" }, el("span", { class: "formula-etiqueta" }, "Expresión del tamaño"));
+    const destino = el("div");
+    nodoFormula.append(destino);
+    latex(destino, datos.formula, { display: true });
+    const conPoblacion = payload.N !== null && payload.N !== undefined;
+    const porGrupo = payload.tipo.startsWith("diferencia_");
+    const leccionTamano = payload.tipo === "media" ? "tamano_media" : payload.tipo === "proporcion" ? "tamano_proporcion" : "tamano_diferencia";
+
+    abrirVentana({
+      id: "mues-tamano",
+      titulo: "Muestra recomendada",
+      tituloCorto: `n = ${datos.n}`,
+      subtitulo: porGrupo ? "Tamaño por grupo para dos muestras independientes." : conPoblacion ? "Con corrección por población finita." : "Población infinita o muy grande.",
+      icono: "objetivo",
+      tipo: "resultados",
+      alcance: "vista",
+      enfocar,
+      contenido: el(
+        "div",
+        { class: "pila" },
+        el("div", { class: "numero-grande" }, fmtNum(datos.n, { entero: true })),
+        el("p", { class: "texto-tenue texto-pequeno" }, porGrupo ? "unidades necesarias en cada grupo." : "unidades necesarias para el margen y la confianza solicitados."),
+        kpi({ etiqueta: "Confianza", valor: fmtPorcentaje(datos.confianza), detalle: "nivel elegido" }),
+        nodoFormula,
+        alerta({ tipo: "info", texto: `Con ${fmtPorcentaje(datos.confianza)} de confianza y un margen de ${fmtNum(datos.error, { decimales: 3 })}, necesitas al menos ${datos.n} unidades${porGrupo ? " en cada grupo" : ""}. Redondea siempre hacia arriba.` })
+      ),
+      pie: el(
+        "div",
+        { class: "fila fila--entre", style: { width: "100%", flexWrap: "wrap", gap: "8px" } },
+        boton("Usar este n", { variante: "primario", pequeno: true, icono: "descargar", onClick: usarNCalculado }),
+        boton("Teoría", { variante: "fantasma", pequeno: true, icono: "teoria", onClick: () => abrirTeoriaVentana(leccionTamano, { alcance: "vista" }) })
+      ),
+    });
+  }
+
+  function renderBarraTamano() {
+    if (!resultadoTamano) { barraTamanoHost.replaceChildren(); return; }
+    barraTamanoHost.replaceChildren(
+      barraResultados({
+        icono: "calculadora",
+        resumen: `Muestra recomendada: n = ${fmtNum(resultadoTamano.n, { entero: true })} (${fmtPorcentaje(resultadoTamano.confianza)} confianza)`,
+        botones: [
+          boton("Ver cálculo", { variante: "primario", pequeno: true, icono: "objetivo", onClick: () => abrirTamanoVentana() }),
+          boton("Aplicar n", { variante: "secundario", pequeno: true, icono: "descargar", onClick: usarNCalculado }),
+        ],
+      })
+    );
   }
 
   async function calcularTamano() {
@@ -215,6 +279,7 @@ export async function montar(host, parametro) {
     controladorTamano = new AbortController();
     botonTamano.cargando(true);
     estadoTamano.replaceChildren(el("span", { class: "pulso" }), "Calculando…");
+    errorTamanoHost.replaceChildren();
     const N = tipoTamano.startsWith("diferencia_") ? null : campoPoblacionTamano.valor();
     const payload = {
       tipo: tipoTamano,
@@ -226,13 +291,15 @@ export async function montar(host, parametro) {
     try {
       const datos = await api.post("/api/muestreo/tamano", payload, { senal: controladorTamano.signal });
       resultadoTamano = datos;
+      payloadTamano = payload;
       nSugerido = datos.n;
-      renderResultadoTamano(payload, datos);
+      renderBarraTamano();
+      abrirTamanoVentana();
       estadoTamano.replaceChildren("Calculado");
       anunciar(`Tamaño muestral recomendado: ${datos.n}.`);
     } catch (error) {
       if (!esCancelacion(error)) {
-        resultadoTamanoHost.replaceChildren(alerta({ tipo: "error", titulo: "No se pudo calcular n", texto: textoError(error) }));
+        errorTamanoHost.replaceChildren(alerta({ tipo: "error", titulo: "No se pudo calcular n", texto: textoError(error) }));
       }
       estadoTamano.replaceChildren("");
     } finally {
@@ -240,79 +307,28 @@ export async function montar(host, parametro) {
     }
   }
 
-  function renderResultadoTamano(payload, datos) {
-    const nodoFormula = el("div", { class: "formula-card" }, el("span", { class: "formula-etiqueta" }, "Expresión del tamaño"));
-    const destino = el("div");
-    nodoFormula.append(destino);
-    latex(destino, datos.formula, { display: true });
-    const conPoblacion = payload.N !== null && payload.N !== undefined;
-    const porGrupo = payload.tipo.startsWith("diferencia_");
-    resultadoTamanoHost.replaceChildren(
-      panel({
-        titulo: "Muestra recomendada",
-        subtitulo: porGrupo ? "Tamaño por grupo para dos muestras independientes." : conPoblacion ? "Con corrección por población finita." : "Población infinita o muy grande.",
-        icono: "objetivo",
-        acciones: [
-          boton("Usar este n", {
-            variante: "secundario",
-            pequeno: true,
-            icono: "descargar",
-            onClick: () => {
-              // n cuenta unidades: no trasladarlo como cantidad de conglomerados.
-              if (metodo === "conglomerados") {
-                metodo = "finito";
-                history.replaceState(null, "", "#/muestreo/finito");
-                construirFormularioMuestra();
-              }
-              fijarNAutomatico(false);
-              camposMuestra.n.setValor(datos.n);
-              camposMuestra.n.limpiarError();
-              if (conPoblacion && !camposMuestra.N.control.disabled) camposMuestra.N.setValor(payload.N);
-              resultadoMuestra = null;
-              renderResultadoMuestraVacio();
-              estadoMuestra.replaceChildren();
-              actualizarResumen();
-              toast(`n = ${datos.n} trasladado al diseño de selección.`, { tipo: "ok" });
-              document.querySelector(".seccion-seleccion")?.scrollIntoView({ behavior: comportamientoScroll(), block: "start" });
-            },
-          }),
-        ],
-        contenido: el(
-          "div",
-          { class: "pila" },
-          el("div", { class: "numero-grande" }, fmtNum(datos.n, { entero: true })),
-          el("p", { class: "texto-tenue texto-pequeno" }, porGrupo ? "unidades necesarias en cada grupo." : "unidades necesarias para el margen y la confianza solicitados."),
-          kpi({ etiqueta: "Confianza", valor: fmtPorcentaje(datos.confianza), detalle: "nivel elegido" }),
-          nodoFormula,
-          alerta({ tipo: "info", texto: `Con ${fmtPorcentaje(datos.confianza)} de confianza y un margen de ${fmtNum(datos.error, { decimales: 3 })}, necesitas al menos ${datos.n} unidades${porGrupo ? " en cada grupo" : ""}. Redondea siempre hacia arriba y ajusta por no respuesta si procede.` })
-        ),
-      })
-    );
-    renderMath(resultadoTamanoHost);
-  }
-
   botonTamano.addEventListener("click", calcularTamano);
 
   const panelTamano = panel({
     titulo: "1 · ¿Cuántas unidades necesito?",
-    subtitulo: "Dimensiona la muestra antes de seleccionarla. El margen y la confianza determinan el esfuerzo de campo.",
+    subtitulo: "Dimensiona la muestra antes de seleccionarla.",
     icono: "calculadora",
+    acciones: [
+      boton("Teoría", {
+        variante: "fantasma",
+        pequeno: true,
+        icono: "teoria",
+        onClick: () => abrirTeoriaVentana(tipoTamano === "media" ? "tamano_media" : tipoTamano === "proporcion" ? "tamano_proporcion" : "tamano_diferencia", { alcance: "vista" }),
+      }),
+    ],
     contenido: el(
       "div",
       { class: "pila" },
       contenedorTipo,
       contenedorCamposTamano,
       el("div", { class: "fila" }, botonTamano, estadoTamano),
-      resultadoTamanoHost,
-      pliegue({
-        titulo: "Supuestos del cálculo",
-        contenido: el(
-          "div",
-          { class: "pila pila--sm" },
-          el("p", { class: "texto-articulo" }, "Fórmula normal aproximada para proporciones o medias. Para proporciones se usa el escenario más desfavorable si no hay estimación previa. El resultado no incluye ajustes por no respuesta ni por diseño complejo."),
-          boton("Teoría del tamaño muestral", { variante: "fantasma", pequeno: true, icono: "teoria", onClick: () => navegar(`teoria/${tipoTamano === "media" ? "tamano_media" : tipoTamano === "proporcion" ? "tamano_proporcion" : "tamano_diferencia"}`) })
-        ),
-      })
+      barraTamanoHost,
+      errorTamanoHost
     ),
   });
 
@@ -320,7 +336,8 @@ export async function montar(host, parametro) {
 
   const selectorMetodos = el("div", { class: "rejilla rejilla--herramientas" });
   const camposMetodo = el("div", { class: "pila" });
-  const resultadoMuestraHost = el("div", { "aria-live": "polite" });
+  const barraMuestraHost = el("div", { "aria-live": "polite" });
+  const errorMuestraHost = el("div", { "aria-live": "polite" });
   const resumenDiseno = el("div", { class: "barra-suma" });
   let camposMuestra = {};
   let campoNAuto = null;
@@ -342,7 +359,9 @@ export async function montar(host, parametro) {
             onClick: () => {
               metodo = m.clave;
               resultadoMuestra = null;
-              resultadoMuestraHost.replaceChildren();
+              barraMuestraHost.replaceChildren();
+              errorMuestraHost.replaceChildren();
+              cerrarVentanasPorAlcance("vista");
               history.replaceState(null, "", `#/muestreo/${m.clave}`);
               construirFormularioMuestra();
             },
@@ -371,54 +390,16 @@ export async function montar(host, parametro) {
         el("span")
       )
     );
-    const celda = (control, etiqueta) => el("label", { class: "celda-estrato" },
-      el("span", { class: "celda-estrato__etiqueta" }, etiqueta), control
-    );
+    const celda = (control, etiqueta) => el("label", { class: "celda-estrato" }, el("span", { class: "celda-estrato__etiqueta" }, etiqueta), control);
     estratos.forEach((estrato, indice) => {
-      const nombre = el("input", {
-        type: "text",
-        value: estrato.nombre,
-        "aria-label": `Nombre del ${esConglomerado ? "conglomerado" : "estrato"} ${indice + 1}`,
-        onInput: (e) => {
-          estrato.nombre = e.target.value;
-          actualizarResumen();
-        },
-      });
-      const tamano = el("input", {
-        type: "text",
-        inputMode: "numeric",
-        value: estrato.N,
-        "aria-label": `Tamaño del grupo ${indice + 1}`,
-        onInput: (e) => {
-          estrato.N = e.target.value;
-          actualizarResumen();
-        },
-      });
-      const sigma = el("input", {
-        type: "text",
-        inputMode: "decimal",
-        value: estrato.sigma,
-        "aria-label": `Desviación del grupo ${indice + 1}`,
-        onInput: (e) => {
-          estrato.sigma = e.target.value;
-        },
-      });
-      const costo = el("input", {
-        type: "text",
-        inputMode: "decimal",
-        value: estrato.costo,
-        "aria-label": `Coste del grupo ${indice + 1}`,
-        onInput: (e) => {
-          estrato.costo = e.target.value;
-        },
-      });
+      const nombre = el("input", { type: "text", value: estrato.nombre, "aria-label": `Nombre del ${esConglomerado ? "conglomerado" : "estrato"} ${indice + 1}`, onInput: (e) => { estrato.nombre = e.target.value; actualizarResumen(); } });
+      const tamano = el("input", { type: "text", inputMode: "numeric", value: estrato.N, "aria-label": `Tamaño del grupo ${indice + 1}`, onInput: (e) => { estrato.N = e.target.value; actualizarResumen(); } });
+      const sigma = el("input", { type: "text", inputMode: "decimal", value: estrato.sigma, "aria-label": `Desviación del grupo ${indice + 1}`, onInput: (e) => { estrato.sigma = e.target.value; } });
+      const costo = el("input", { type: "text", inputMode: "decimal", value: estrato.costo, "aria-label": `Coste del grupo ${indice + 1}`, onInput: (e) => { estrato.costo = e.target.value; } });
       const quitar = iconoBoton("basura", {
         etiqueta: `Eliminar ${estrato.nombre || "grupo"}`,
         onClick: () => {
-          if (estratos.length <= 1) {
-            toast("Necesitas al menos un grupo.", { tipo: "aviso" });
-            return;
-          }
+          if (estratos.length <= 1) { toast("Necesitas al menos un grupo.", { tipo: "aviso" }); return; }
           estratos.splice(indice, 1);
           renderTablaEstratos();
           actualizarResumen();
@@ -426,9 +407,11 @@ export async function montar(host, parametro) {
       });
       tablaEstratos.append(
         el("div", { class: "fila-estrato" },
-          celda(nombre, esConglomerado ? "Conglomerado" : "Estrato"), celda(tamano, "Tamaño N"),
+          celda(nombre, esConglomerado ? "Conglomerado" : "Estrato"),
+          celda(tamano, "Tamaño N"),
           esConglomerado ? el("span", { class: "celda-estrato--vacia" }) : celda(sigma, "Desviación σ"),
-          esConglomerado ? el("span", { class: "celda-estrato--vacia" }) : celda(costo, "Coste"), quitar
+          esConglomerado ? el("span", { class: "celda-estrato--vacia" }) : celda(costo, "Coste"),
+          quitar
         )
       );
     });
@@ -472,7 +455,7 @@ export async function montar(host, parametro) {
       valor: semillaAnterior,
       min: 0,
       max: 999999999,
-      ayuda: "La misma semilla y los mismos parámetros reproducen exactamente la muestra.",
+      ayuda: "Reproduce exactamente el sorteo.",
     });
     camposMuestra = { N, n, semilla };
 
@@ -480,7 +463,7 @@ export async function montar(host, parametro) {
       etiqueta: "Calcular n automáticamente",
       tipo: "checkbox",
       valor: auto,
-      ayuda: "Usa p = 0,5, margen ±5 puntos porcentuales y confianza del 95 %. Para otros valores, usa el paso 1.",
+      ayuda: "Usa p = 0,5, margen ±5 pp y 95 % de confianza.",
     });
     campoNAuto.control.addEventListener("change", () => fijarNAutomatico(campoNAuto.valor()));
     fijarNAutomatico(auto);
@@ -493,7 +476,7 @@ export async function montar(host, parametro) {
           valor: "",
           min: 1,
           opcional: true,
-          ayuda: "Vacío = encuestar todas las unidades del conglomerado. Con valor = muestreo en dos etapas.",
+          ayuda: "Vacío = encuestar todo el conglomerado.",
         })
       : null;
     if (campoPorGrupo) camposMuestra.n_por_grupo = campoPorGrupo;
@@ -525,7 +508,6 @@ export async function montar(host, parametro) {
     N.control.addEventListener("input", actualizarResumen);
     n.control.addEventListener("input", actualizarResumen);
     actualizarResumen();
-    renderResultadoMuestraVacio();
   }
 
   function fijarNAutomatico(valor) {
@@ -541,9 +523,7 @@ export async function montar(host, parametro) {
     const N = numero(camposMuestra.N?.texto()) ?? totalEstratos();
     const n = auto && metodo !== "conglomerados" ? null : numero(camposMuestra.n?.texto());
     const esEstratificado = ["proporcional", "neyman", "optimo", "conglomerados"].includes(metodo);
-    if (camposMuestra.N && esEstratificado) {
-      camposMuestra.N.setValor(String(totalEstratos()));
-    }
+    if (camposMuestra.N && esEstratificado) camposMuestra.N.setValor(String(totalEstratos()));
     const poblacion = esEstratificado ? totalEstratos() : N;
     resumenDiseno.replaceChildren(
       el("span", {}, "Población"),
@@ -558,35 +538,17 @@ export async function montar(host, parametro) {
   function validarMuestra() {
     const esEstratificado = ["proporcional", "neyman", "optimo", "conglomerados"].includes(metodo);
     if (esEstratificado) {
-      if (!estratos.length) {
-        toast("Añade al menos un grupo.", { tipo: "error" });
-        return false;
-      }
+      if (!estratos.length) { toast("Añade al menos un grupo.", { tipo: "error" }); return false; }
       const nombres = new Set();
       for (let i = 0; i < estratos.length; i++) {
         const e = estratos[i];
-        if (!e.nombre.trim()) {
-          toast(`El grupo ${i + 1} necesita un nombre.`, { tipo: "error" });
-          return false;
-        }
-        if (nombres.has(e.nombre.trim().toLocaleLowerCase("es"))) {
-          toast("Los nombres de los grupos deben ser únicos.", { tipo: "error" });
-          return false;
-        }
+        if (!e.nombre.trim()) { toast(`El grupo ${i + 1} necesita un nombre.`, { tipo: "error" }); return false; }
+        if (nombres.has(e.nombre.trim().toLocaleLowerCase("es"))) { toast("Los nombres de los grupos deben ser únicos.", { tipo: "error" }); return false; }
         nombres.add(e.nombre.trim().toLocaleLowerCase("es"));
         const tam = numero(e.N);
-        if (tam === null || !Number.isInteger(tam) || tam < 1) {
-          toast(`El tamaño de «${e.nombre}» debe ser un entero positivo.`, { tipo: "error" });
-          return false;
-        }
-        if (metodo !== "conglomerados" && (numero(e.sigma) === null || numero(e.sigma) <= 0)) {
-          toast(`La desviación de «${e.nombre}» debe ser mayor que cero.`, { tipo: "error" });
-          return false;
-        }
-        if (metodo === "optimo" && (numero(e.costo) === null || numero(e.costo) <= 0)) {
-          toast(`El coste de «${e.nombre}» debe ser mayor que cero.`, { tipo: "error" });
-          return false;
-        }
+        if (tam === null || !Number.isInteger(tam) || tam < 1) { toast(`El tamaño de «${e.nombre}» debe ser un entero positivo.`, { tipo: "error" }); return false; }
+        if (metodo !== "conglomerados" && (numero(e.sigma) === null || numero(e.sigma) <= 0)) { toast(`La desviación de «${e.nombre}» debe ser mayor que cero.`, { tipo: "error" }); return false; }
+        if (metodo === "optimo" && (numero(e.costo) === null || numero(e.costo) <= 0)) { toast(`El coste de «${e.nombre}» debe ser mayor que cero.`, { tipo: "error" }); return false; }
       }
     }
     let ok = true;
@@ -594,7 +556,7 @@ export async function montar(host, parametro) {
       c.limpiarError();
       if (id === "n" && auto) continue;
       const texto = c.texto();
-      if (!texto && (id === "n_por_grupo")) continue;
+      if (!texto && id === "n_por_grupo") continue;
       const valor = c.valor();
       const minimo = id === "semilla" ? 0 : 1;
       if (typeof valor !== "number" || !Number.isInteger(valor) || valor < minimo) {
@@ -610,107 +572,47 @@ export async function montar(host, parametro) {
       return false;
     }
     if (metodo === "conglomerados" && n !== null && n > estratos.length) {
-      camposMuestra.n.setError(`Solo hay ${estratos.length} conglomerados; elige como máximo esa cantidad.`);
+      camposMuestra.n.setError(`Solo hay ${estratos.length} conglomerados.`);
       return false;
     }
     return true;
   }
 
-  async function ejecutarMuestra() {
-    if (!validarMuestra()) {
-      toast("Revisa el diseño de la muestra", { tipo: "error" });
-      return;
-    }
-    if (controladorMuestra) controladorMuestra.abort();
-    controladorMuestra = new AbortController();
-    botonMuestra.cargando(true);
-    estadoMuestra.replaceChildren(el("span", { class: "pulso" }), "Sorteando…");
-    const esEstratificado = ["proporcional", "neyman", "optimo", "conglomerados"].includes(metodo);
-    const payload = {
-      metodo,
-      N: esEstratificado ? totalEstratos() : numero(camposMuestra.N.texto()),
-      n: auto ? 100 : numero(camposMuestra.n.texto()),
-      semilla: numero(camposMuestra.semilla.texto()),
-      auto: Boolean(auto && metodo !== "conglomerados"),
-      p: 0.5,
-      error: 0.05,
-      confianza: 0.95,
-      estratos: esEstratificado
-        ? estratos.map((e) => ({
-            nombre: e.nombre.trim(),
-            N: numero(e.N),
-            sigma: metodo === "conglomerados" ? 1 : numero(e.sigma),
-            costo: numero(e.costo) || 1,
-          }))
-        : [],
-      n_por_grupo: metodo === "conglomerados" && camposMuestra.n_por_grupo?.texto() ? numero(camposMuestra.n_por_grupo.texto()) : null,
-    };
-    try {
-      const datos = await api.post("/api/muestreo", payload, { senal: controladorMuestra.signal });
-      resultadoMuestra = datos;
-      renderResultadoMuestra(datos);
-      estadoMuestra.replaceChildren("Sorteada");
-      registrarHistorial({
-        titulo: `Muestreo · ${etiquetaMetodo(metodo)}`,
-        detalle: `${datos.total_muestra} de ${datos.total_poblacion} · semilla ${datos.semilla}`,
-        ruta: `muestreo/${metodo}`,
-        tipo: "muestreo",
-        icono: "muestreo",
-      });
-      anunciar(`Muestra de ${datos.total_muestra} unidades generada.`);
-    } catch (error) {
-      if (!esCancelacion(error)) {
-        resultadoMuestraHost.replaceChildren(alerta({ tipo: "error", titulo: "No se pudo generar la muestra", texto: textoError(error) }));
-      }
-      estadoMuestra.replaceChildren("");
-    } finally {
-      botonMuestra.cargando(false);
-    }
-  }
-
-  botonMuestra.addEventListener("click", ejecutarMuestra);
-
-  function renderResultadoMuestraVacio() {
-    if (resultadoMuestra) return;
-    resultadoMuestraHost.replaceChildren(
-      panel({
-        titulo: "Sin muestra todavía",
-        icono: "info",
-        contenido: estadoVacio({
-          icono: "muestreo",
-          titulo: "Define el diseño y sortea",
-          texto: "Configura la población, el tamaño y la semilla. La vista mostrará la asignación por grupo, las unidades seleccionadas y la tasa de muestreo.",
-        }),
-      })
-    );
-  }
-
-  function renderResultadoMuestra(datos) {
+  function abrirGraficoMuestra(datos, { enfocar = true } = {}) {
     const hostGrafico = el("div");
-    setTimeout(() => {
-      dibujar(hostGrafico, {
-        tipo: "barras",
-        categorias: datos.etiquetas,
-        series: [
-          { nombre: "Población", x: datos.etiquetas.map((_, i) => i), y: datos.poblacion, tipo: "barra", color: "var(--grafico-2)" },
-          { nombre: "Selección", x: datos.etiquetas.map((_, i) => i), y: datos.seleccion, tipo: "barra", color: "var(--grafico-1)" },
-        ],
-        ylabel: "Unidades",
-        altura: 270,
-        yCero: true,
-        ariaLabel: "Población y muestra por grupo",
-      });
-    }, 0);
+    abrirVentana({
+      id: "mues-grafico",
+      titulo: `Composición · ${etiquetaMetodo(metodo)}`,
+      tituloCorto: "Gráfico",
+      subtitulo: "Población y selección por grupo",
+      icono: "grafico",
+      tipo: "grafico",
+      alcance: "vista",
+      enfocar,
+      accionesCabecera: [
+        boton("PNG", { variante: "fantasma", pequeno: true, icono: "imagen", onClick: (e) => exportarMuestra(datos, "png", e.currentTarget) }),
+      ],
+      contenido: hostGrafico,
+      pie: el("div", { class: "fila", style: { gap: "6px" } },
+        boton("Resultados", { variante: "fantasma", pequeno: true, icono: "objetivo", onClick: () => abrirResultadoMuestra(datos) }),
+        boton("Unidades seleccionadas", { variante: "fantasma", pequeno: true, icono: "tabla", onClick: () => abrirTablaMuestra(datos) })
+      ),
+    });
+    dibujar(hostGrafico, {
+      tipo: "barras",
+      categorias: datos.etiquetas,
+      series: [
+        { nombre: "Población", x: datos.etiquetas.map((_, i) => i), y: datos.poblacion, tipo: "barra", color: "var(--grafico-2)" },
+        { nombre: "Selección", x: datos.etiquetas.map((_, i) => i), y: datos.seleccion, tipo: "barra", color: "var(--grafico-1)" },
+      ],
+      ylabel: "Unidades",
+      altura: 300,
+      yCero: true,
+      ariaLabel: "Población y muestra por grupo",
+    });
+  }
 
-    const kpis = el(
-      "div",
-      { class: "rejilla rejilla--kpi" },
-      kpi({ etiqueta: "Población", valor: fmtNum(datos.total_poblacion, { entero: true }), detalle: `${datos.etiquetas.length} grupo${datos.etiquetas.length === 1 ? "" : "s"}`, tono: "marca" }),
-      kpi({ etiqueta: "Muestra", valor: fmtNum(datos.total_muestra, { entero: true }), detalle: "unidades extraídas" }),
-      kpi({ etiqueta: "Tasa", valor: fmtPorcentaje(datos.total_muestra / datos.total_poblacion, 2), detalle: "fracción de muestreo" }),
-      kpi({ etiqueta: "Semilla", valor: String(datos.semilla), detalle: "reproducible" })
-    );
-
+  function abrirTablaMuestra(datos, { enfocar = true } = {}) {
     const nombresTablas = Object.keys(datos.tablas || {});
     let tablaActiva = nombresTablas[0];
     const hostTabla = el("div");
@@ -743,31 +645,136 @@ export async function montar(host, parametro) {
     }
     pintarTabla();
 
-    const panelResumen = panel({
-      titulo: "Diseño ejecutado",
-      subtitulo: datos.resumen,
-      icono: "muestreo",
-      acciones: [
-        boton("Copiar", { variante: "fantasma", pequeno: true, icono: "copiar", onClick: () => copiar(`${datos.resumen}\nSemilla: ${datos.semilla}`) }),
-        ...botonesExportar(["pdf", "xlsx", "png", "csv"], (formato, nodo) => exportarMuestra(datos, formato, nodo)),
-      ],
-      contenido: el("div", { class: "pila" }, kpis, alerta({ tipo: "info", texto: "La semilla hace reproducible la selección. Guárdala junto al informe para poder auditar el sorteo." })),
+    abrirVentana({
+      id: "mues-tabla",
+      titulo: `Unidades seleccionadas · ${etiquetaMetodo(metodo)}`,
+      tituloCorto: "Unidades",
+      subtitulo: `Muestra de ${datos.total_muestra} unidades`,
+      icono: "tabla",
+      tipo: "tabla",
+      alcance: "vista",
+      enfocar,
+      contenido: el("div", { class: "pila" }, selectorTablas, hostTabla),
+      pie: el("div", { class: "fila", style: { gap: "6px" } },
+        boton("Resultados", { variante: "fantasma", pequeno: true, icono: "objetivo", onClick: () => abrirResultadoMuestra(datos) }),
+        boton("Gráfico", { variante: "fantasma", pequeno: true, icono: "grafico", onClick: () => abrirGraficoMuestra(datos) })
+      ),
     });
+  }
 
-    resultadoMuestraHost.replaceChildren(
-      el(
+  function abrirResultadoMuestra(datos, { enfocar = true } = {}) {
+    const kpis = el(
+      "div",
+      { class: "rejilla rejilla--kpi" },
+      kpi({ etiqueta: "Población", valor: fmtNum(datos.total_poblacion, { entero: true }), detalle: `${datos.etiquetas.length} grupo${datos.etiquetas.length === 1 ? "" : "s"}`, tono: "marca" }),
+      kpi({ etiqueta: "Muestra", valor: fmtNum(datos.total_muestra, { entero: true }), detalle: "unidades extraídas" }),
+      kpi({ etiqueta: "Tasa", valor: fmtPorcentaje(datos.total_muestra / datos.total_poblacion, 2), detalle: "fracción de muestreo" }),
+      kpi({ etiqueta: "Semilla", valor: String(datos.semilla), detalle: "reproducible" })
+    );
+
+    abrirVentana({
+      id: "mues-resultados",
+      titulo: "Diseño ejecutado",
+      tituloCorto: "Diseño ejecutado",
+      subtitulo: `${etiquetaMetodo(metodo)} · ${datos.resumen}`,
+      icono: "muestreo",
+      tipo: "resultados",
+      alcance: "vista",
+      enfocar,
+      contenido: el("div", { class: "pila" }, kpis, alerta({ tipo: "info", texto: "La semilla hace reproducible la selección. Guárdala junto al informe para poder auditar el sorteo." })),
+      pie: el(
         "div",
-        { class: "pila" },
-        panelResumen,
+        { class: "fila fila--entre", style: { width: "100%", flexWrap: "wrap", gap: "8px" } },
         el(
           "div",
-          { class: "rejilla rejilla--2" },
-          panel({ titulo: "Composición de la muestra", icono: "grafico", contenido: hostGrafico }),
-          panel({ titulo: "Unidades seleccionadas", icono: "tabla", contenido: el("div", { class: "pila" }, selectorTablas, hostTabla) })
+          { class: "fila", style: { gap: "6px", flexWrap: "wrap" } },
+          boton("Ver gráfico", { variante: "primario", pequeno: true, icono: "grafico", onClick: () => abrirGraficoMuestra(datos) }),
+          boton("Unidades seleccionadas", { variante: "secundario", pequeno: true, icono: "tabla", onClick: () => abrirTablaMuestra(datos) }),
+          boton("Teoría", { variante: "fantasma", pequeno: true, icono: "teoria", onClick: () => abrirTeoriaVentana(LECCIONES_MUESTREO[metodo], { alcance: "vista" }) })
+        ),
+        el(
+          "div",
+          { class: "fila", style: { gap: "6px", flexWrap: "wrap" } },
+          boton("Copiar", { variante: "fantasma", pequeno: true, icono: "copiar", onClick: () => copiar(`${datos.resumen}\nSemilla: ${datos.semilla}`) }),
+          ...botonesExportar(["pdf", "xlsx", "png", "csv"], (formato, nodo) => exportarMuestra(datos, formato, nodo), { variante: "fantasma" })
         )
-      )
+      ),
+    });
+  }
+
+  function renderBarraMuestra() {
+    if (!resultadoMuestra) { barraMuestraHost.replaceChildren(); return; }
+    const datos = resultadoMuestra;
+    barraMuestraHost.replaceChildren(
+      barraResultados({
+        icono: "muestreo",
+        resumen: `${etiquetaMetodo(metodo)}: ${fmtNum(datos.total_muestra, { entero: true })} de ${fmtNum(datos.total_poblacion, { entero: true })} · semilla ${datos.semilla}`,
+        botones: [
+          boton("Resultados", { variante: "primario", pequeno: true, icono: "objetivo", onClick: () => abrirResultadoMuestra(datos) }),
+          boton("Gráfico", { variante: "secundario", pequeno: true, icono: "grafico", onClick: () => abrirGraficoMuestra(datos) }),
+          boton("Unidades", { variante: "secundario", pequeno: true, icono: "tabla", onClick: () => abrirTablaMuestra(datos) }),
+        ],
+      })
     );
   }
+
+  async function ejecutarMuestra() {
+    if (!validarMuestra()) {
+      toast("Revisa el diseño de la muestra", { tipo: "error" });
+      return;
+    }
+    if (controladorMuestra) controladorMuestra.abort();
+    controladorMuestra = new AbortController();
+    botonMuestra.cargando(true);
+    estadoMuestra.replaceChildren(el("span", { class: "pulso" }), "Sorteando…");
+    errorMuestraHost.replaceChildren();
+    const esEstratificado = ["proporcional", "neyman", "optimo", "conglomerados"].includes(metodo);
+    const payload = {
+      metodo,
+      N: esEstratificado ? totalEstratos() : numero(camposMuestra.N.texto()),
+      n: auto ? 100 : numero(camposMuestra.n.texto()),
+      semilla: numero(camposMuestra.semilla.texto()),
+      auto: Boolean(auto && metodo !== "conglomerados"),
+      p: 0.5,
+      error: 0.05,
+      confianza: 0.95,
+      estratos: esEstratificado
+        ? estratos.map((e) => ({
+            nombre: e.nombre.trim(),
+            N: numero(e.N),
+            sigma: metodo === "conglomerados" ? 1 : numero(e.sigma),
+            costo: numero(e.costo) || 1,
+          }))
+        : [],
+      n_por_grupo: metodo === "conglomerados" && camposMuestra.n_por_grupo?.texto() ? numero(camposMuestra.n_por_grupo.texto()) : null,
+    };
+    try {
+      const datos = await api.post("/api/muestreo", payload, { senal: controladorMuestra.signal });
+      resultadoMuestra = datos;
+      renderBarraMuestra();
+      abrirResultadoMuestra(datos);
+      if (ventanasAbiertas().some((v) => v.id === "mues-grafico")) abrirGraficoMuestra(datos, { enfocar: false });
+      if (ventanasAbiertas().some((v) => v.id === "mues-tabla")) abrirTablaMuestra(datos, { enfocar: false });
+      estadoMuestra.replaceChildren("Sorteada");
+      registrarHistorial({
+        titulo: `Muestreo · ${etiquetaMetodo(metodo)}`,
+        detalle: `${datos.total_muestra} de ${datos.total_poblacion} · semilla ${datos.semilla}`,
+        ruta: `muestreo/${metodo}`,
+        tipo: "muestreo",
+        icono: "muestreo",
+      });
+      anunciar(`Muestra de ${datos.total_muestra} unidades generada.`);
+    } catch (error) {
+      if (!esCancelacion(error)) {
+        errorMuestraHost.replaceChildren(alerta({ tipo: "error", titulo: "No se pudo generar la muestra", texto: textoError(error) }));
+      }
+      estadoMuestra.replaceChildren("");
+    } finally {
+      botonMuestra.cargando(false);
+    }
+  }
+
+  botonMuestra.addEventListener("click", ejecutarMuestra);
 
   async function exportarMuestra(datos, formato, botonNodo) {
     const tablas = Object.entries(datos.tablas || {}).map(([nombre, t]) => ({ nombre, columnas: t.columnas, filas: t.filas }));
@@ -803,7 +810,7 @@ export async function montar(host, parametro) {
     titulo: "2 · Selecciona la muestra",
     icono: "muestreo",
     clase: "seccion-seleccion",
-    contenido: el("div", { class: "pila" }, selectorMetodos, camposMetodo, resultadoMuestraHost),
+    contenido: el("div", { class: "pila" }, selectorMetodos, camposMetodo, barraMuestraHost, errorMuestraHost),
   });
 
   host.append(
@@ -823,16 +830,16 @@ export async function montar(host, parametro) {
             icono("muestreo", { tamano: 26 }),
             el("h1", { tabindex: "-1" }, "Diseño y selección de muestras")
           ),
-          el(
-            "p",
-            { class: "vista__subtitulo" },
-            VISTAS.muestreo.subtitulo
-          )
+          el("p", { class: "vista__subtitulo" }, VISTAS.muestreo.subtitulo)
         ),
         el(
           "div",
           { class: "vista__acciones" },
-          boton("Repasar muestreo", { variante: "secundario", icono: "teoria", onClick: () => navegar(`teoria/${LECCIONES_MUESTREO[metodo]}`) })
+          boton("Teoría", {
+            variante: "secundario",
+            icono: "teoria",
+            onClick: () => abrirTeoriaVentana(LECCIONES_MUESTREO[metodo], { alcance: "vista" }),
+          })
         )
       ),
       panelTamano,
