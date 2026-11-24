@@ -6,12 +6,8 @@ import {
   campo,
   kpi,
   badge,
-  latex,
-  textoMatematico,
   tabla,
   alerta,
-  estadoVacio,
-  esqueletoPanel,
   anunciar,
   toast,
   copiar,
@@ -21,13 +17,11 @@ import {
   errorEnCampo,
   textoError,
   avisosMotor,
-  renderMath,
   pliegue,
   segmentado,
   comportamientoScroll,
 } from "../ui.js";
 import { icono } from "../icons.js";
-import { contenidoLectura } from "../lectura.js";
 import { dibujar } from "../chart.js";
 import { crearCamposParametros, resumenParametros } from "../params.js";
 import {
@@ -45,6 +39,8 @@ import {
 } from "../store.js";
 import { api, ErrorApi, esCancelacion } from "../api.js";
 import { fmtEntrada, leerSerie } from "../entrada.js";
+import { abrirVentana, cerrarVentanasPorAlcance, ventanasAbiertas, barraResultados } from "../ventanas.js";
+import { abrirTeoriaVentana, abrirFichaModeloVentana } from "../teoria_dialogo.js";
 
 const VISTAS_GRAFICO = [
   ["funcion", "Función"],
@@ -65,14 +61,12 @@ function dimensionEsperada(modelo) {
   return vector?.default?.length || 2;
 }
 
-/** Texto de un vector para mostrarlo: «(3; 2; 5)» no se confunde con decimales. */
 function formatearValorX(valor) {
   if (Array.isArray(valor)) return `(${valor.map((v) => fmtNum(v)).join("; ")})`;
   if (typeof valor === "number") return fmtNum(valor);
   return valor ?? "";
 }
 
-/** Texto de un vector para el campo de entrada: valores separados por espacios. */
 function textoCampoX(valor) {
   if (Array.isArray(valor)) return valor.map((v) => (typeof v === "number" ? fmtEntrada(v) : String(v))).join(" ");
   return valor ?? "";
@@ -140,7 +134,7 @@ export async function montar(host, parametro) {
   let autoActivo = prefs.calculo_automatico;
   let haCalculado = false;
 
-  /* --------------------------- Estructura --------------------------- */
+  /* --------------------------- Estructura simplificada --------------------------- */
 
   const buscador = el("div", { class: "lista-busqueda" });
   const entradaBusqueda = el("input", {
@@ -177,9 +171,15 @@ export async function montar(host, parametro) {
   });
   panelModelos.cuerpo.classList.add("panel__cuerpo--estrecho");
 
-  const fichaHost = el("div");
   const formHost = el("div");
-  const resultadoHost = el("div", { class: "resultado", "aria-live": "polite" });
+  const barraHost = el("div", { "aria-live": "polite" });
+  const errorHost = el("div", { "aria-live": "polite" });
+
+  const botonTeoriaCabecera = boton("Ver teoría", {
+    variante: "secundario",
+    icono: "teoria",
+    onClick: () => modelo.teoria && abrirTeoriaVentana(modelo.teoria, { alcance: "vista" }),
+  });
 
   host.append(
     el(
@@ -198,14 +198,11 @@ export async function montar(host, parametro) {
             icono("distribuciones", { tamano: 26 }),
             el("h1", { tabindex: "-1" }, "Laboratorio de distribuciones")
           ),
-          el(
-            "p",
-            { class: "vista__subtitulo" },
-            VISTAS.distribuciones.subtitulo
-          )
-        )
+          el("p", { class: "vista__subtitulo" }, VISTAS.distribuciones.subtitulo)
+        ),
+        el("div", { class: "vista__acciones" }, botonTeoriaCabecera)
       ),
-      el("div", { class: "dividido" }, panelModelos, el("div", { class: "pila" }, fichaHost, formHost, resultadoHost))
+      el("div", { class: "dividido" }, panelModelos, el("div", { class: "pila" }, formHost, barraHost, errorHost))
     )
   );
 
@@ -255,113 +252,25 @@ export async function montar(host, parametro) {
 
   entradaBusqueda.addEventListener("input", renderLista);
 
-  /* --------------------------- Ficha --------------------------- */
+  /* --------------------------- Ficha en ventana --------------------------- */
 
-  function renderFicha() {
-    const formula = el("div", { class: "formula-card" });
-    const etiquetaFormula = modelo.discreta ? "Función de masa (PMF)" : "Función de densidad (PDF)";
-    if (modelo.formula) {
-      formula.append(el("span", { class: "formula-etiqueta" }, etiquetaFormula));
-      const mate = el("div");
-      formula.append(mate);
-      latex(mate, modelo.formula, { display: true });
-    } else {
-      formula.append(el("p", { class: "texto-tenue" }, "La lección de este modelo no incluye una fórmula en bloque."));
-    }
-
-    const detalles = el("div", { class: "pila pila--sm" });
-    if (modelo.ejemplo) {
-      detalles.append(
-        pliegue({
-          titulo: "Ejemplo resuelto",
-          icono: "ejemplo",
-          contenido: modelo.ejemplo_html ? contenidoLectura(modelo.ejemplo_html, { compacto: true }) : textoMatematico(modelo.ejemplo),
-        })
-      );
-    }
-    if (modelo.propiedades) {
-      detalles.append(
-        pliegue({
-          titulo: "Propiedades y casos especiales",
-          icono: "info",
-          contenido: modelo.propiedades_html ? contenidoLectura(modelo.propiedades_html, { compacto: true }) : textoMatematico(modelo.propiedades),
-        })
-      );
-    }
-
-    const nodo = panel({
-      titulo: null,
-      sinCabecera: true,
-      contenido: el(
-        "div",
-        { class: "modelo-ficha" },
-        el(
-          "div",
-          { class: "modelo-ficha__titulo" },
-          el("h2", {}, modelo.nombre),
-          badge(modelo.discreta ? "Discreta" : "Continua", modelo.discreta ? "discreta" : "continua"),
-          modelo.dimensionalidad !== "univariante"
-            ? badge(modelo.dimensionalidad === "bivariante" ? "Bivariante" : "Multivariante", "multivariante")
-            : null,
-          badge(`${modelo.parametros.length} parámetro${modelo.parametros.length === 1 ? "" : "s"}`)
-        ),
-        el(
-          "div",
-          { class: "ficha-acciones" },
-          boton("Ver lección", {
-            variante: "fantasma",
-            pequeno: true,
-            icono: "teoria",
-            onClick: () => modelo.teoria && navegar(`teoria/${modelo.teoria}`),
-            deshabilitado: !modelo.teoria,
-          }),
-          boton("Copiar enlace", {
-            variante: "fantasma",
-            pequeno: true,
-            icono: "enlace",
-            onClick: () => copiar(`${location.origin}${location.pathname}#/distribuciones/${modelo.clave}`),
-          }),
-          boton("Simular muestra", {
-            variante: "fantasma",
-            pequeno: true,
-            icono: "simulacion",
-            onClick: () => {
-              transito.simulacion = {
-                tipo: "muestra",
-                clave: modelo.clave,
-                parametros: campos ? campos.valores() : estado.parametros,
-                n: 1000,
-              };
-              navegar("simulacion/muestra");
-            },
-          })
-        ),
-        modelo.resumen ? textoMatematico(modelo.resumen) : null,
-        formula,
-        modelo.dimensionalidad !== "univariante"
-          ? alerta({
-              tipo: "aviso",
-              titulo: "Modelo multivariante",
-              texto: "La curva y la tabla resumen la primera marginal. La masa o densidad conjunta se evalúa con el vector completo de x; los momentos son por componente.",
-            })
-          : null,
-        el(
-          "div",
-          { class: "chips" },
-          el("span", { class: "chip" }, `Clave: ${modelo.clave}`),
-          modelo.soporte_sugerido
-            ? el("span", { class: "chip" }, `Soporte: [${modelo.soporte_sugerido[0]}, ${modelo.soporte_sugerido[1]}]`)
-            : null,
-          el("span", { class: "chip" }, modelo.discreta ? "PMF / CDF" : "PDF / CDF")
-        ),
-        detalles
-      ),
+  function abrirFicha() {
+    abrirFichaModeloVentana(modelo, {
+      alcance: "vista",
+      alAbrirTeoria: (teoriaClave) => abrirTeoriaVentana(teoriaClave, { alcance: "vista" }),
+      alSimular: () => {
+        transito.simulacion = {
+          tipo: "muestra",
+          clave: modelo.clave,
+          parametros: campos ? campos.valores() : estado.parametros,
+          n: 1000,
+        };
+        navegar("simulacion/muestra");
+      },
     });
-    fichaHost.replaceChildren(nodo);
-    renderMath(nodo);
   }
 
-  /* --------------------------- Formulario --------------------------- */
+  /* --------------------------- Formulario directo --------------------------- */
 
   function renderFormulario() {
     campos = crearCamposParametros(modelo, {
@@ -379,7 +288,7 @@ export async function montar(host, parametro) {
       valor: textoCampoX(estado.x),
       ayuda: esMultiple
         ? `Introduce ${dimensionEsperada(modelo)} valores separados por espacios.`
-        : soporteTexto(modelo) || "Introduce un valor dentro o fuera del soporte; fuera de él la probabilidad es 0.",
+        : soporteTexto(modelo) || "Introduce un valor dentro o fuera del soporte.",
       requerido: true,
       onInput: programarAuto,
     });
@@ -391,7 +300,7 @@ export async function montar(host, parametro) {
       valor: estado.q,
       min: 0,
       max: 1,
-      ayuda: "Probabilidad entre 0 y 1. q = 0,5 devuelve la mediana.",
+      ayuda: "Probabilidad entre 0 y 1 (0,5 = mediana).",
       onInput: () => {
         const v = campoQ.valor();
         if (typeof v === "number" && v >= 0 && v <= 1) rangoQ.value = String(v);
@@ -406,10 +315,6 @@ export async function montar(host, parametro) {
       step: "0.01",
       value: String(estado.q ?? 0.5),
       "aria-label": "Ajustar el cuantil q",
-    });
-    rangoQ.addEventListener("input", () => {
-      campoQ.setValor(rangoQ.value);
-      programarAuto();
     });
 
     campoA = campo({
@@ -435,7 +340,6 @@ export async function montar(host, parametro) {
       tipo: "select",
       valor: String(estado.puntos ?? 161),
       opciones: [["81", "81 puntos"], ["161", "161 puntos"], ["241", "241 puntos"], ["401", "401 puntos"]],
-      ayuda: "Más puntos muestran mejor las colas; el cálculo es igual de exacto.",
       onCambio: programarAuto,
     });
 
@@ -445,7 +349,7 @@ export async function montar(host, parametro) {
       tipo: "entero",
       valor: 42,
       min: 0,
-      ayuda: "Sólo se usa para dibujar la marginal de modelos multivariantes.",
+      ayuda: "Para la marginal en modelos multivariantes.",
       onInput: programarAuto,
     });
 
@@ -453,7 +357,7 @@ export async function montar(host, parametro) {
     casillaAuto.addEventListener("change", () => {
       autoActivo = casillaAuto.checked;
       guardarPrefs({ calculo_automatico: autoActivo });
-      if (autoActivo) programarAuto(80);
+      if (autoActivo && haCalculado) programarAuto(80);
     });
 
     const botonCalcular = boton("Calcular", {
@@ -468,13 +372,12 @@ export async function montar(host, parametro) {
         guardarEstadoModelo(modelo.clave, {});
         estado = crearEstado(modelo);
         renderFormulario();
-        calcular({ forzar: true });
+        if (haCalculado) calcular({ forzar: true });
         toast("Parámetros restablecidos", { tipo: "info", duracion: 2200 });
       },
     });
 
-    const identificadorForm = `form-dist-${modelo.clave}`;
-    const formulario = el("form", { id: identificadorForm, novalidate: "true" });
+    const formulario = el("form", { id: `form-dist-${modelo.clave}`, novalidate: "true" });
 
     const consulta = el(
       "div",
@@ -490,7 +393,9 @@ export async function montar(host, parametro) {
       el("span", { class: "rango-valor" }, fmtNum(estado.q ?? 0.5, { decimales: 2 }))
     );
     rangoQ.addEventListener("input", () => {
+      campoQ.setValor(rangoQ.value);
       rango.lastElementChild.textContent = fmtNum(rangoQ.value, { decimales: 2 });
+      programarAuto();
     });
 
     formulario.append(
@@ -526,7 +431,7 @@ export async function montar(host, parametro) {
             "label",
             { class: "casilla", for: "auto-calculo" },
             casillaAuto,
-            el("span", {}, el("strong", {}, "Calcular al cambiar"), " los valores")
+            el("span", {}, el("strong", {}, "Calcular al cambiar"))
           )
         )
       )
@@ -537,12 +442,31 @@ export async function montar(host, parametro) {
       calcular({ forzar: true });
     });
 
+    const accionesCabecera = [
+      badge(modelo.discreta ? "Discreta" : "Continua", modelo.discreta ? "discreta" : "continua"),
+      boton("Fórmula y ejemplo", {
+        variante: "secundario",
+        pequeno: true,
+        icono: "ejemplo",
+        onClick: abrirFicha,
+      }),
+      modelo.teoria
+        ? boton("Teoría", {
+            variante: "fantasma",
+            pequeno: true,
+            icono: "teoria",
+            onClick: () => abrirTeoriaVentana(modelo.teoria, { alcance: "vista" }),
+          })
+        : null,
+    ].filter(Boolean);
+
     const nodo = panel({
-      titulo: "Parámetros y consulta",
-      subtitulo: modelo.parametros.length
-        ? "Los rangos y tipos provienen de la validación del motor."
-        : "Este modelo usa la forma estándar, sin parámetros.",
-      icono: "ajustes",
+      titulo: modelo.nombre,
+      subtitulo: modelo.soporte_sugerido
+        ? `Soporte: [${modelo.soporte_sugerido[0]}, ${modelo.soporte_sugerido[1]}]`
+        : "Introduce los parámetros y pulsa Calcular para ver los resultados en una ventana emergente.",
+      icono: "distribuciones",
+      acciones: accionesCabecera,
       contenido: formulario,
     });
     formHost.replaceChildren(nodo);
@@ -552,14 +476,10 @@ export async function montar(host, parametro) {
 
   function programarAuto(espera = 420) {
     clearTimeout(temporizadorAuto);
-    if (!autoActivo) {
-      persistir();
-      return;
-    }
     persistir();
+    if (!autoActivo || !haCalculado) return;
     temporizadorAuto = setTimeout(() => {
-      // Antes del primer cálculo no validamos en cada tecla: evita errores prematuros.
-      if (haCalculado) calcular({ auto: true });
+      calcular({ auto: true });
     }, espera);
   }
 
@@ -637,7 +557,6 @@ export async function montar(host, parametro) {
         x,
         q,
         puntos: Number(campoPuntos.valor()) || 161,
-        // La semilla 0 es válida: solo se usa 42 si el campo está vacío o no es un entero.
         semilla: Number.isInteger(campoSemilla.valor()) ? campoSemilla.valor() : 42,
         intervalo,
       },
@@ -653,16 +572,17 @@ export async function montar(host, parametro) {
     if (estadoNodo) {
       estadoNodo.replaceChildren(el("span", { class: "pulso" }), "Calculando…");
     }
-    resultadoHost.setAttribute("aria-busy", "true");
-    if (!resultado && resultadoHost.childElementCount === 0) esqueletoPanel(resultadoHost, 1);
     let estadoFinal = "ok";
 
     try {
       const datosResultado = await api.post("/api/distribucion/calcular", consulta.payload, { senal: controlador.signal });
       resultado = datosResultado;
       haCalculado = true;
-      resultadoHost.querySelector(".error-calculo")?.remove();
-      renderResultado();
+      errorHost.replaceChildren();
+      renderBarraResultados();
+      abrirResultadosVentana({ enfocar: !auto });
+      if (ventanasAbiertas().some((v) => v.id === "dist-grafico")) abrirGraficoVentana({ enfocar: false });
+      if (ventanasAbiertas().some((v) => v.id === "dist-tabla")) abrirTablaVentana({ enfocar: false });
       persistir();
       registrarHistorial({
         titulo: `${modelo.nombre} · x = ${formatearValorX(consulta.payload.x)}`,
@@ -677,12 +597,9 @@ export async function montar(host, parametro) {
         estadoFinal = "cancelado";
         return;
       }
-      // También en cálculo automático: un error nunca se traga ni se deja a la vista
-      // un resultado anterior como si fuese el actual.
       estadoFinal = "error";
       mostrarError(error, { silencioso: auto });
     } finally {
-      resultadoHost.setAttribute("aria-busy", "false");
       const nodo = host.querySelector("#estado-calculo");
       if (nodo && estadoFinal === "ok") {
         nodo.replaceChildren(
@@ -690,7 +607,7 @@ export async function montar(host, parametro) {
           `Actualizado ${new Date().toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" })}`
         );
       } else if (nodo && estadoFinal === "error") {
-        nodo.replaceChildren(icono("alerta", { tamano: 13 }), resultado ? "Sin actualizar: el resultado mostrado es anterior" : "No se pudo calcular");
+        nodo.replaceChildren(icono("alerta", { tamano: 13 }), resultado ? "Sin actualizar" : "No se pudo calcular");
       } else if (nodo) {
         nodo.replaceChildren();
       }
@@ -699,39 +616,30 @@ export async function montar(host, parametro) {
 
   function mostrarError(error, { silencioso = false } = {}) {
     const mensaje = error instanceof ErrorApi ? textoError(error) : "No se pudo completar el cálculo.";
-    // Si el motor señala el campo culpable (un parámetro, x, q…), el error va junto a él.
     const enCampo =
       error instanceof ErrorApi &&
       errorEnCampo(error, { ...(campos?.campos || {}), x: campoX, q: campoQ, a: campoA, b: campoB, intervalo: campoA, semilla: campoSemilla, puntos: campoPuntos });
     const titulo = error?.tipo === "timeout" ? "El cálculo tardó demasiado" : enCampo ? "Revisa el campo marcado" : "Revisa los datos";
-    const acciones = [
-      boton("Reintentar", {
-        variante: "secundario",
-        pequeno: true,
-        icono: "actualizar",
-        onClick: () => calcular({ forzar: true }),
-      }),
-    ];
-    resultadoHost.querySelector(".error-calculo")?.remove();
-    if (!resultado) {
-      const bloque = panel({ titulo: "No se pudo calcular", icono: "alerta", contenido: alerta({ tipo: "error", titulo, texto: mensaje, acciones }) });
-      bloque.classList.add("error-calculo");
-      resultadoHost.replaceChildren(bloque);
-    } else {
-      const aviso = alerta({
+    errorHost.replaceChildren(
+      alerta({
         tipo: "error",
-        titulo: "El último cálculo falló: el resultado de abajo corresponde a los valores anteriores",
+        titulo,
         texto: mensaje,
-        acciones,
-      });
-      aviso.classList.add("error-calculo");
-      resultadoHost.prepend(aviso);
-    }
+        acciones: [
+          boton("Reintentar", {
+            variante: "secundario",
+            pequeno: true,
+            icono: "actualizar",
+            onClick: () => calcular({ forzar: true }),
+          }),
+        ],
+      })
+    );
     if (silencioso) anunciar(`Error: ${error.message}`);
     else toast(mensaje, { tipo: "error" });
   }
 
-  /* --------------------------- Resultados --------------------------- */
+  /* --------------------------- Ventanas de resultados --------------------------- */
 
   function resumenTexto(resultadoActual = resultado) {
     if (!resultadoActual) return "";
@@ -763,7 +671,6 @@ export async function montar(host, parametro) {
     let yDomain = null;
 
     if (vistaGrafico === "acumulada") {
-      // La CDF de una variable discreta es una función escalonada, no una curva.
       serie = { nombre: "P(X ≤ x)", x: curva.x, y: curva.acumulada, color: "var(--grafico-2)", escalon: esDiscreta, trazo: "" };
       ylabel = "Probabilidad acumulada";
       yDomain = [0, 1];
@@ -796,18 +703,11 @@ export async function montar(host, parametro) {
       xlabel: "x",
       ylabel,
       titulo: `${modelo.nombre} · ${vistaGrafico === "funcion" ? (esDiscreta ? "masa" : "densidad") : vistaGrafico}`,
-      altura: 320,
+      altura: 340,
       yCero: vistaGrafico === "funcion",
       dominioY: yDomain,
       ariaLabel: `Gráfico de ${vistaGrafico} de la distribución ${modelo.nombre}`,
     };
-  }
-
-  function renderGrafico(hostGrafico) {
-    const cfg = configuracionGrafico();
-    if (!cfg) return;
-    dibujar(hostGrafico, cfg);
-    hostGrafico._cfgActual = cfg;
   }
 
   function tablaResultado() {
@@ -863,7 +763,97 @@ export async function montar(host, parametro) {
     else await tarea();
   }
 
-  function renderResultado() {
+  function abrirGraficoVentana({ enfocar = true } = {}) {
+    if (!resultado) return;
+    const hostGrafico = el("div");
+    const controlVista = segmentado({
+      etiqueta: "Vista del gráfico",
+      valor: vistaGrafico,
+      opciones: VISTAS_GRAFICO,
+      onCambio: (nuevo) => {
+        vistaGrafico = nuevo;
+        const cfg = configuracionGrafico();
+        if (cfg) dibujar(hostGrafico, cfg);
+      },
+    });
+    const nota = el(
+      "p",
+      { class: "texto-tenue texto-pequeno" },
+      modelo.discreta
+        ? "Barras: masa P(X = x). Línea: acumulada o supervivencia."
+        : "Área y línea: densidad f(x). La probabilidad se obtiene integrando."
+    );
+
+    abrirVentana({
+      id: "dist-grafico",
+      titulo: `Gráfico · ${modelo.nombre}`,
+      tituloCorto: "Gráfico",
+      subtitulo: "Pasa el cursor o usa las flechas del teclado para leer valores exactos",
+      icono: "grafico",
+      tipo: "grafico",
+      alcance: "vista",
+      enfocar,
+      accionesCabecera: [
+        boton("PNG", { variante: "fantasma", pequeno: true, icono: "imagen", onClick: (e) => exportar("png", e.currentTarget) }),
+      ],
+      contenido: el("div", { class: "pila" }, controlVista, hostGrafico, nota),
+      pie: el(
+        "div",
+        { class: "fila fila--entre", style: { width: "100%", flexWrap: "wrap", gap: "8px" } },
+        el(
+          "div",
+          { class: "fila", style: { gap: "6px" } },
+          boton("Resultados", { variante: "fantasma", pequeno: true, icono: "objetivo", onClick: () => abrirResultadosVentana() }),
+          boton("Tabla", { variante: "fantasma", pequeno: true, icono: "tabla", onClick: () => abrirTablaVentana() })
+        ),
+        boton("Simular muestra", {
+          variante: "secundario",
+          pequeno: true,
+          icono: "simulacion",
+          onClick: () => {
+            transito.simulacion = { tipo: "muestra", clave: modelo.clave, parametros: resultado.parametros, n: 1000 };
+            navegar("simulacion/muestra");
+          },
+        })
+      ),
+    });
+
+    const cfg = configuracionGrafico();
+    if (cfg) dibujar(hostGrafico, cfg);
+  }
+
+  function abrirTablaVentana({ enfocar = true } = {}) {
+    if (!resultado) return;
+    const tablaActual = tablaResultado();
+    abrirVentana({
+      id: "dist-tabla",
+      titulo: `Tabla · ${modelo.nombre}`,
+      tituloCorto: "Tabla",
+      subtitulo: "Puntos evaluados de la distribución",
+      icono: "tabla",
+      tipo: "tabla",
+      alcance: "vista",
+      enfocar,
+      accionesCabecera: [
+        boton("CSV", { variante: "fantasma", pequeno: true, icono: "descargar", onClick: (e) => exportar("csv", e.currentTarget) }),
+        boton("Excel", { variante: "fantasma", pequeno: true, icono: "tabla", onClick: (e) => exportar("xlsx", e.currentTarget) }),
+      ],
+      contenido: tabla({
+        ...tablaActual,
+        titulo: `${modelo.nombre} · tabla`,
+        maximo: 420,
+        altura: "alta",
+      }),
+      pie: el(
+        "div",
+        { class: "fila", style: { gap: "6px", flexWrap: "wrap" } },
+        boton("Resultados", { variante: "fantasma", pequeno: true, icono: "objetivo", onClick: () => abrirResultadosVentana() }),
+        boton("Gráfico", { variante: "fantasma", pequeno: true, icono: "grafico", onClick: () => abrirGraficoVentana() })
+      ),
+    });
+  }
+
+  function abrirResultadosVentana({ enfocar = true } = {}) {
     if (!resultado) return;
     const r = resultado.resumen;
     const p = r.densidad;
@@ -893,125 +883,72 @@ export async function montar(host, parametro) {
             detalle: `${fmtPorcentaje(resultado.intervalo.probabilidad, 2)} · a = ${fmtNum(resultado.intervalo.a)}, b = ${fmtNum(resultado.intervalo.b)}`,
             tono: "ok",
           })
-        : kpi({
-            etiqueta: "Probabilidad de intervalo",
-            valor: "—",
-            detalle: "Rellena a y b para calcularla",
-          })
+        : kpi({ etiqueta: "Intervalo", valor: "—", detalle: "Rellena a y b para calcularlo" })
     );
 
-    const accionesExportar = [
-      boton("PNG", { variante: "secundario", pequeno: true, icono: "imagen", onClick: (e) => exportar("png", e.currentTarget) }),
-      boton("PDF", { variante: "secundario", pequeno: true, icono: "documento", onClick: (e) => exportar("pdf", e.currentTarget) }),
-      boton("Excel", { variante: "secundario", pequeno: true, icono: "tabla", onClick: (e) => exportar("xlsx", e.currentTarget) }),
-    ];
+    const cuerpo = el(
+      "div",
+      { class: "pila" },
+      alerta({ tipo: "info", texto: interpretacion }),
+      kpis,
+      momentos,
+      avisosMotor(resultado.avisos),
+      resultado.nota ? el("p", { class: "aviso-mini" }, icono("info", { tamano: 13 }), resultado.nota) : null
+    );
 
-    const cabeceraResultado = el(
-      "header",
-      { class: "panel__cabecera" },
+    const pie = el(
+      "div",
+      { class: "fila fila--entre", style: { width: "100%", flexWrap: "wrap", gap: "8px" } },
       el(
         "div",
-        {},
-        el("h2", { class: "panel__titulo" }, icono("objetivo", { tamano: 16 }), "Resultado"),
-        el("p", { class: "panel__subtitulo" }, interpretacion)
+        { class: "fila", style: { gap: "6px", flexWrap: "wrap" } },
+        boton("Ver gráfico", { variante: "primario", pequeno: true, icono: "grafico", onClick: () => abrirGraficoVentana() }),
+        boton("Ver tabla", { variante: "secundario", pequeno: true, icono: "tabla", onClick: () => abrirTablaVentana() }),
+        boton("Fórmula y ejemplo", { variante: "secundario", pequeno: true, icono: "ejemplo", onClick: abrirFicha }),
+        modelo.teoria
+          ? boton("Teoría", { variante: "fantasma", pequeno: true, icono: "teoria", onClick: () => abrirTeoriaVentana(modelo.teoria, { alcance: "vista" }) })
+          : null
       ),
       el(
         "div",
-        { class: "panel__acciones" },
-        boton("Copiar resumen", {
-          variante: "fantasma",
-          pequeno: true,
-          icono: "copiar",
-          onClick: () => copiar(resumenTexto()),
-        }),
-        ...accionesExportar
+        { class: "fila", style: { gap: "6px", flexWrap: "wrap" } },
+        boton("Copiar", { variante: "fantasma", pequeno: true, icono: "copiar", onClick: () => copiar(resumenTexto()) }),
+        boton("PNG", { variante: "fantasma", pequeno: true, icono: "imagen", onClick: (e) => exportar("png", e.currentTarget) }),
+        boton("PDF", { variante: "fantasma", pequeno: true, icono: "documento", onClick: (e) => exportar("pdf", e.currentTarget) }),
+        boton("Excel", { variante: "fantasma", pequeno: true, icono: "tabla", onClick: (e) => exportar("xlsx", e.currentTarget) })
       )
     );
 
-    const panelResultado = el(
-      "section",
-      { class: "panel panel--resultado" },
-      cabeceraResultado,
-      el("div", { class: "panel__cuerpo" }, el("div", { class: "pila" }, kpis, momentos, avisosMotor(resultado.avisos), resultado.nota ? el("p", { class: "aviso-mini" }, icono("info", { tamano: 13 }), resultado.nota) : null))
-    );
-
-    const hostGrafico = el("div");
-    const controlVista = segmentado({
-      etiqueta: "Vista del gráfico",
-      valor: vistaGrafico,
-      opciones: VISTAS_GRAFICO,
-      onCambio: (nuevo) => {
-        vistaGrafico = nuevo;
-        renderGrafico(hostGrafico);
-      },
+    abrirVentana({
+      id: "dist-resultados",
+      titulo: `Resultado · ${modelo.nombre}`,
+      tituloCorto: `Resultado · ${modelo.nombre}`,
+      subtitulo: resumenParametros(modelo, resultado.parametros),
+      icono: "objetivo",
+      tipo: "resultados",
+      alcance: "vista",
+      enfocar,
+      contenido: cuerpo,
+      pie,
     });
-
-    const panelGrafico = panel({
-      titulo: "Forma de la distribución",
-      subtitulo: "Pasa el cursor o usa las flechas del teclado para leer valores exactos.",
-      icono: "grafico",
-      acciones: controlVista,
-      contenido: el("div", {}, hostGrafico),
-      pie: el(
-        "div",
-        { class: "fila fila--entre", style: { width: "100%" } },
-        el("span", {}, modelo.discreta ? "Barras: masa P(X = x). Línea: acumulada o cola." : "Área y línea: densidad f(x). La probabilidad se obtiene integrando."),
-        el(
-          "div",
-          { class: "grupo-botones" },
-          boton("Enviar a simulación", {
-            variante: "fantasma",
-            pequeno: true,
-            icono: "simulacion",
-            onClick: () => {
-              transito.simulacion = { tipo: "muestra", clave: modelo.clave, parametros: resultado.parametros, n: 1000 };
-              navegar("simulacion/muestra");
-            },
-          })
-        )
-      ),
-    });
-
-    const tablaActual = tablaResultado();
-    const panelTabla = panel({
-      titulo: "Datos del cálculo",
-      subtitulo: "La tabla completa permite verificar cada punto de la curva.",
-      icono: "tabla",
-      acciones: [
-        boton("CSV", {
-          variante: "fantasma",
-          pequeno: true,
-          icono: "descargar",
-          onClick: (e) => exportar("csv", e.currentTarget),
-        }),
-      ],
-      contenido: tabla({
-        ...tablaActual,
-        titulo: `${modelo.nombre} · tabla`,
-        maximo: 420,
-        altura: "alta",
-      }),
-    });
-
-    resultadoHost.replaceChildren(
-      el("div", { class: "pila" }, panelResultado, panelGrafico, panelTabla)
-    );
-    renderGrafico(hostGrafico);
-    renderMath(resultadoHost);
   }
 
-  function renderInicial() {
-    resultadoHost.replaceChildren(
-      panel({
-        titulo: "Listo para calcular",
-        icono: "info",
-        contenido: estadoVacio({
-          icono: "distribuciones",
-          titulo: "Configura el modelo y pulsa Calcular",
-          texto: autoActivo
-            ? "Con el cálculo automático activo, el resultado aparecerá en cuanto los valores sean válidos."
-            : "El cálculo automático está desactivado: pulsa Calcular o usa Ctrl + Enter cuando quieras actualizar.",
-        }),
+  function renderBarraResultados() {
+    if (!resultado) {
+      barraHost.replaceChildren();
+      return;
+    }
+    const p = resultado.resumen.densidad;
+    barraHost.replaceChildren(
+      barraResultados({
+        icono: "objetivo",
+        resumen: `${modelo.nombre} · ${p.etiqueta} = ${fmtNum(p.valor, { decimales: 4 })} · P(X ≤ x) = ${fmtNum(resultado.resumen.acumulada.valor, { decimales: 4 })}`,
+        botones: [
+          boton("Resultados", { variante: "primario", pequeno: true, icono: "objetivo", onClick: () => abrirResultadosVentana() }),
+          boton("Gráfico", { variante: "secundario", pequeno: true, icono: "grafico", onClick: () => abrirGraficoVentana() }),
+          boton("Tabla", { variante: "secundario", pequeno: true, icono: "tabla", onClick: () => abrirTablaVentana() }),
+          boton("Fórmula y ejemplo", { variante: "fantasma", pequeno: true, icono: "ejemplo", onClick: abrirFicha }),
+        ],
       })
     );
   }
@@ -1020,6 +957,7 @@ export async function montar(host, parametro) {
 
   async function seleccionar(nuevaClave, { inicial = false } = {}) {
     if (controlador) controlador.abort();
+    if (!inicial) cerrarVentanasPorAlcance("vista");
     persistir();
     clave = nuevaClave;
     modelo = distribucion(clave);
@@ -1027,17 +965,14 @@ export async function montar(host, parametro) {
     resultado = null;
     vistaGrafico = "funcion";
     haCalculado = false;
+    botonTeoriaCabecera.disabled = !modelo.teoria;
     recordarModelo(clave);
     history.replaceState(null, "", `#/distribuciones/${clave}`);
+    errorHost.replaceChildren();
     renderLista();
-    renderFicha();
     renderFormulario();
-    renderInicial();
+    renderBarraResultados();
     anunciar(`Modelo ${modelo.nombre} seleccionado.`);
-    if (autoActivo) {
-      if (inicial) calcular({ auto: true });
-      else calcular({ auto: true, forzar: true });
-    }
     if (!inicial) window.scrollTo({ top: 0, behavior: comportamientoScroll() });
   }
 
@@ -1048,9 +983,5 @@ export async function montar(host, parametro) {
     if (controlador) controlador.abort();
     controladoresExport.forEach((c) => c.abort());
     clearTimeout(temporizadorAuto);
-    if (resultadoHost.querySelector(".grafico")) {
-      const grafico = resultadoHost.querySelector(".grafico");
-      if (grafico?._observadorGrafico) grafico._observadorGrafico.disconnect();
-    }
   };
 }

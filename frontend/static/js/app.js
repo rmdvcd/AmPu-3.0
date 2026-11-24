@@ -17,6 +17,7 @@ import {
 } from "./store.js";
 import { NAV, ORDEN_VISTAS, VISTAS } from "./data.js";
 import { accionAtajo } from "./atajos.js";
+import { cerrarVentanasPorAlcance, cerrarVentanaSuperior, enfocarVentana } from "./ventanas.js";
 
 const MODULOS = {
   inicio: () => import("./views/inicio.js"),
@@ -284,6 +285,7 @@ async function renderRuta(forzar = false) {
     }
     destruirVista = null;
   }
+  cerrarVentanasPorAlcance("vista");
 
   marcarNav(vista);
   actualizarMigas(vista);
@@ -609,11 +611,15 @@ function conectarEventos() {
         evento.preventDefault();
         toast("Cálculo cancelado.", { tipo: "info" });
         anunciar("Cálculo cancelado.");
+      } else if (!(objetivo instanceof HTMLInputElement && objetivo.type === "search" && objetivo.value) && cerrarVentanaSuperior()) {
+        evento.preventDefault();
       }
     } else if (accion === "grafico") {
       const grafico = [...document.querySelectorAll(".grafico svg[tabindex]")].find((n) => n.getBoundingClientRect().width > 0);
       if (grafico) {
         evento.preventDefault();
+        const ventanaPadre = grafico.closest(".ventana");
+        if (ventanaPadre?.dataset.ventanaId) enfocarVentana(ventanaPadre.dataset.ventanaId);
         grafico.focus();
         grafico.scrollIntoView({ behavior: comportamientoScroll(), block: "center" });
         anunciar("Gráfico. Flechas para recorrer los valores; más y menos para el zoom; cero para restablecer.");

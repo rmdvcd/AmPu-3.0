@@ -106,6 +106,10 @@ const TRAZOS = {
   punto: '<circle cx="12" cy="12" r="3" fill="currentColor" stroke="none"/>',
   marca:
     '<path d="M7 4h10M7 20h10M8.5 4 20 20M20 4 8.5 20"/>',
+  minimizar: '<path d="M5 17h14"/>',
+  maximizar: '<rect x="5" y="5" width="14" height="14" rx="2"/>',
+  restaurar: '<rect x="7" y="4" width="13" height="13" rx="1.8"/><path d="M4 8.5V18a2 2 0 0 0 2 2h9.5"/>',
+  ventanas: '<rect x="3" y="7" width="13" height="12" rx="2"/><path d="M8 7V5a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2"/>',
 };
 
 export const NOMBRES_ICONOS = Object.keys(TRAZOS);
