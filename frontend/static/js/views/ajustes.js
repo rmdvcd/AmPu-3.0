@@ -282,6 +282,19 @@ export async function montar(host) {
     onClick: () => entradaArchivo.click(),
   });
 
+  const botonRecorrido = boton("Ver recorrido inicial", {
+    variante: "secundario",
+    icono: "chispa",
+    onClick: async () => {
+      try {
+        const { abrirWalkthroughDesdeInicio } = await import("../walkthrough.js");
+        await abrirWalkthroughDesdeInicio({ enfocar: true });
+      } catch {
+        toast("No se pudo iniciar el recorrido", { tipo: "error" });
+      }
+    },
+  });
+
   const botonRestablecer = boton("Restablecer preferencias", {
     variante: "peligro",
     icono: "restablecer",
@@ -392,7 +405,7 @@ export async function montar(host) {
       "div",
       { class: "pila" },
       el("p", { class: "texto-articulo" }, "El navegador guarda preferencias, actividad y estados de distribuciones. El servidor local conserva una copia de las preferencias. Sin cuentas ni telemetría."),
-      el("div", { class: "fila", style: { flexWrap: "wrap" } }, botonExportar, botonImportar, botonRestablecer, entradaArchivo)
+      el("div", { class: "fila", style: { flexWrap: "wrap" } }, botonExportar, botonImportar, botonRecorrido, botonRestablecer, entradaArchivo)
     ),
   });
 

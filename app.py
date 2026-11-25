@@ -2242,25 +2242,101 @@ def _figura_export(payload: dict | None):
     fig = Figure(figsize=(8.4, 4.6), dpi=120, facecolor="white", layout="constrained")
     ax = fig.add_subplot(111)
     colores = ["#0f766e", "#1d4ed8", "#b45309", "#7c3aed", "#be123c"]
-    for i, serie in enumerate(payload["series"]):
+    estilos_linea = ["-", "--", ":", "-.", (0, (7, 2))]
+    formas_punto = ["o", "s", "^", "D"]
+    series_crudas = payload["series"]
+    barras_grupo = [
+        i for i, s in enumerate(series_crudas)
+        if s.get("tipo") == "barra" and not s.get("anchoDatos")
+        and any(a is not None and b is not None for a, b in zip(s.get("x") or [], s.get("y") or []))
+    ]
+    n_barras = len(barras_grupo)
+    dibujadas = False
+    for i, serie in enumerate(series_crudas):
         xs, ys = serie.get("x") or [], serie.get("y") or []
-        pares = [(float(a), float(b)) for a, b in zip(xs, ys) if a is not None and b is not None]
-        if not pares:
-            continue
+        tipo = serie.get("tipo") or "linea"
         color = colores[i % len(colores)]
-        if serie.get("tipo") == "barra":
-            ax.bar([p[0] for p in pares], [p[1] for p in pares], color=color, alpha=.75, width=.8,
-                   label=serie.get("nombre"))
-        elif serie.get("tipo") == "dispersion":
-            ax.scatter([p[0] for p in pares], [p[1] for p in pares], s=16, color=color, alpha=.7,
+        if tipo == "barra":
+            pares = []
+            for a, b in zip(xs, ys):
+                if a is None or b is None:
+                    continue
+                try:
+                    fa, fb = float(a), float(b)
+                except (TypeError, ValueError):
+                    continue
+                if math.isfinite(fa) and math.isfinite(fb):
+                    pares.append((fa, fb))
+            if not pares:
+                continue
+            dibujadas = True
+            bx = [p[0] for p in pares]
+            by = [p[1] for p in pares]
+            ancho = float(serie["anchoDatos"]) * 0.92 if serie.get("anchoDatos") else 0.8
+            if n_barras > 1 and i in barras_grupo:
+                idx_b = barras_grupo.index(i)
+                ancho_g = 0.78
+                ancho = ancho_g / n_barras
+                desp = (idx_b - (n_barras - 1) / 2.0) * ancho
+                bx = [x + desp for x in bx]
+            ax.bar(bx, by, color=color, alpha=.78, width=ancho, zorder=2, label=serie.get("nombre"))
+        elif tipo == "dispersion":
+            pares = []
+            for a, b in zip(xs, ys):
+                if a is None or b is None:
+                    continue
+                try:
+                    fa, fb = float(a), float(b)
+                except (TypeError, ValueError):
+                    continue
+                if math.isfinite(fa) and math.isfinite(fb):
+                    pares.append((fa, fb))
+            if not pares:
+                continue
+            dibujadas = True
+            ax.scatter([p[0] for p in pares], [p[1] for p in pares], s=18, color=color,
+                       marker=formas_punto[i % len(formas_punto)], alpha=.75, zorder=4,
                        label=serie.get("nombre"))
         else:
-            ax.plot([p[0] for p in pares], [p[1] for p in pares], color=color, linewidth=1.8,
-                    label=serie.get("nombre"))
+            px, py = [], []
+            hay_validos = False
+            for a, b in zip(xs, ys):
+                if a is None or b is None:
+                    if hay_validos and (not px or not math.isnan(px[-1])):
+                        px.append(math.nan)
+                        py.append(math.nan)
+                    continue
+                try:
+                    fa, fb = float(a), float(b)
+                except (TypeError, ValueError):
+                    continue
+                if math.isfinite(fa) and math.isfinite(fb):
+                    px.append(fa)
+                    py.append(fb)
+                    hay_validos = True
+                elif hay_validos and (not px or not math.isnan(px[-1])):
+                    px.append(math.nan)
+                    py.append(math.nan)
+            if not hay_validos:
+                continue
+            dibujadas = True
+            estilo = estilos_linea[i % len(estilos_linea)]
+            if serie.get("escalon"):
+                ax.step(px, py, where="post", color=color, linestyle=estilo, linewidth=1.8, zorder=3,
+                        label=serie.get("nombre"))
+            else:
+                ax.plot(px, py, color=color, linestyle=estilo, linewidth=1.8, zorder=3,
+                        label=serie.get("nombre"))
             if serie.get("relleno"):
-                ax.fill_between([p[0] for p in pares], [p[1] for p in pares], color=color, alpha=.12)
+                ax.fill_between(px, py, color=color, alpha=.12, zorder=1)
+    if not dibujadas:
+        return None
+    categorias = payload.get("categorias")
+    if isinstance(categorias, list) and categorias:
+        ax.set_xticks(range(len(categorias)))
+        ax.set_xticklabels([str(c) for c in categorias])
     if payload.get("marcador") is not None:
-        ax.axvline(float(payload["marcador"]), color="#be123c", linestyle="--", linewidth=1.2)
+        ax.axvline(float(payload["marcador"]), color="#be123c", linestyle="--", linewidth=1.2, zorder=5)
     if payload.get("titulo"):
         ax.set_title(payload["titulo"], fontsize=11, loc="left")
     if payload.get("xlabel"):

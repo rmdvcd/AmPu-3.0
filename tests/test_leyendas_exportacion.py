@@ -77,6 +77,33 @@ class LeyendasExportacionTest(unittest.TestCase):
         self.assertIsNone(app._figura_export(None))
         self.assertIsNone(app._figura_export({"series": []}))
 
+    def test_exporta_barras_agrupadas_y_lineas_con_huecos(self):
+        payload = {
+            "titulo": "Varias funciones y barras",
+            "categorias": ["A", "B", "C"],
+            "series": [
+                {"nombre": "Población", "tipo": "barra", "x": [0, 1, 2], "y": [10, 20, 15]},
+                {"nombre": "Selección", "tipo": "barra", "x": [0, 1, 2], "y": [4, 8, 5]},
+            ],
+        }
+        figura = app._figura_export(payload)
+        eje = figura.axes[0]
+        # Las barras agrupadas no comparten exactamente la misma coordenada x.
+        c0, c1 = eje.containers
+        self.assertNotEqual(c0.patches[0].get_x(), c1.patches[0].get_x())
+
+        figura_lineas = app._figura_export({
+            "series": [
+                {"nombre": "f(x)", "tipo": "linea", "x": [0, 1, 2, 3], "y": [1, None, 3, 4], "relleno": True},
+                {"nombre": "g(x)", "tipo": "linea", "x": [0, 3], "y": [2, 2]},
+            ],
+        })
+        self.assertEqual(len(figura_lineas.axes[0].lines), 2)
+        self.assertNotEqual(
+            figura_lineas.axes[0].lines[0].get_linestyle(),
+            figura_lineas.axes[0].lines[1].get_linestyle(),
+        )
+
     def test_api_exporta_png_y_pdf_con_leyendas_largas(self):
         cliente = app.app.test_client()
         figura = figura_payload([
