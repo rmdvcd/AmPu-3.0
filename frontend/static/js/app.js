@@ -7,6 +7,7 @@ import { el, toast, modal, boton, anunciar, renderMath, comportamientoScroll } f
 import { icono, hidratarIconos } from "./icons.js";
 import { cancelarCalculos, hayCalculosEnCurso } from "./api.js";
 import {
+  almacenamientoDisponible,
   cargarMeta,
   cicloTema,
   guardarPrefs,
@@ -14,6 +15,7 @@ import {
   navegar,
   prefs,
   temaResuelto,
+  walkthroughCompletado,
 } from "./store.js";
 import { NAV, ORDEN_VISTAS, VISTAS } from "./data.js";
 import { accionAtajo } from "./atajos.js";
@@ -669,6 +671,21 @@ async function iniciar() {
     history.replaceState(null, "", rutaDe(vista, parametro));
   }
   await renderRuta(true);
+
+  if (
+    parsearHash().vista === "inicio" &&
+    almacenamientoDisponible() &&
+    !walkthroughCompletado() &&
+    !document.querySelector("dialog[open]")
+  ) {
+    import("./walkthrough.js")
+      .then((m) => {
+        if (parsearHash().vista === "inicio" && !document.querySelector("dialog[open]") && !m.walkthroughAbierto()) {
+          m.iniciarWalkthrough({ automatico: true, enfocar: false });
+        }
+      })
+      .catch(() => {});
+  }
 
   // Calienta metadatos para la paleta y las vistas sin bloquear el primer pintado.
   setTimeout(() => {

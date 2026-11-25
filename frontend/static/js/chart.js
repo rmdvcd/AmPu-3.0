@@ -18,6 +18,21 @@ const TRAZOS = ["", "7 4", "2 4", "9 3 2 3", "14 4"];
 const FORMAS = ["circulo", "cuadrado", "triangulo", "rombo"];
 let contadorClip = 0;
 
+function minMax(valores) {
+  let min = Infinity;
+  let max = -Infinity;
+  for (let i = 0; i < valores.length; i++) {
+    const v = valores[i];
+    if (v < min) min = v;
+    if (v > max) max = v;
+  }
+  return min <= max ? [min, max] : [0, 1];
+}
+
+function tipoDeSerie(serie, cfg = {}) {
+  return serie.tipo || ({ barras: "barra", lineas: "linea", linea: "linea", dispersion: "dispersion" }[cfg.tipo] || cfg.tipo || "linea");
+}
+
 function marcador(forma, cx, cy, r, attrs = {}) {
   if (forma === "cuadrado") return svg("rect", { x: cx - r, y: cy - r, width: 2 * r, height: 2 * r, ...attrs });
   if (forma === "triangulo") {
@@ -36,7 +51,10 @@ function rutaEscalon(puntos) {
   let d = "";
   let previo = null;
   for (const [x, y] of puntos) {
-    if (x === null || y === null) continue;
+    if (x === null || y === null) {
+      previo = null;
+      continue;
+    }
     if (previo === null) d += `M${x.toFixed(2)} ${y.toFixed(2)} `;
     else d += `L${x.toFixed(2)} ${previo.toFixed(2)} L${x.toFixed(2)} ${y.toFixed(2)} `;
     previo = y;
@@ -77,10 +95,13 @@ function extension(min, max, maxTicks = 5) {
   else if (normalizado <= 5) paso = 5;
   else paso = 10;
   paso *= magnitud;
+  if (!(paso > 0) || !Number.isFinite(paso)) {
+    return { min: 0, max: 1, paso: 0.2, ticks: [0, 0.2, 0.4, 0.6, 0.8, 1] };
+  }
   const bajo = Math.floor(min / paso) * paso;
   const alto = Math.ceil(max / paso) * paso;
   const ticks = [];
-  for (let v = bajo; v <= alto + paso * 1e-9; v += paso) {
+  for (let v = bajo; v <= alto + paso * 1e-9 && ticks.length < 64; v += paso) {
     ticks.push(Number(v.toFixed(12)));
   }
   return { min: bajo, max: alto, paso, ticks };
@@ -107,25 +128,61 @@ function rutaLinea(puntos) {
   return d.trim();
 }
 
-function prepararSeries(cfg) {
+function puntosOrdenadosParaFuncion(puntos) {
+  if (puntos.length < 2) return puntos.slice();
+  let creciente = true;
+  let decreciente = true;
+  for (let k = 1; k < puntos.length; k++) {
+    if (puntos[k].x < puntos[k - 1].x) creciente = false;
+    if (puntos[k].x > puntos[k - 1].x) decreciente = false;
+    if (!creciente && !decreciente) return null;
+  }
+  if (creciente) return puntos;
+  const rev = puntos.slice().reverse();
+  return rev.map((p, idx) => ({
+    ...p,
+    salto: idx > 0 ? Boolean(rev[idx - 1].salto) : false,
+  }));
+}
+
+export function prepararSeries(cfg = {}) {
+  const esCategorica = Array.isArray(cfg.categorias);
   const series = (cfg.series || [])
     .map((serie, i) => {
       const xs = Array.isArray(serie.x) ? serie.x : [];
       const ys = Array.isArray(serie.y) ? serie.y : [];
       const n = Math.min(xs.length, ys.length);
       const puntos = [];
+      const porIndice = new Map();
+      let huboSalto = false;
       for (let j = 0; j < n; j++) {
         const y = numero(ys[j]);
-        if (y === null) continue;
-        puntos.push({ x: xs[j], y, i: j });
+        const xNum = esCategorica ? j : numero(xs[j]);
+        if (y === null || xNum === null) {
+          huboSalto = true;
+          continue;
+        }
+        const punto = {
+          x: esCategorica ? xs[j] ?? cfg.categorias[j] ?? j : xNum,
+          y,
+          i: j,
+          salto: puntos.length > 0 && huboSalto,
+        };
+        puntos.push(punto);
+        porIndice.set(j, punto);
+        huboSalto = false;
       }
+      const nombre = serie.nombre || `Serie ${i + 1}`;
       return {
         ...serie,
-        nombre: serie.nombre || `Serie ${i + 1}`,
+        _clave: `${i}:${nombre}`,
+        nombre,
         color: serie.color || COLORES[i % COLORES.length],
         trazo: serie.trazo ?? TRAZOS[i % TRAZOS.length],
         forma: serie.forma || FORMAS[i % FORMAS.length],
         puntos,
+        porIndice,
+        puntosX: esCategorica ? null : puntosOrdenadosParaFuncion(puntos),
         orden: i,
       };
     })
@@ -133,9 +190,89 @@ function prepararSeries(cfg) {
   return series;
 }
 
+export function valorSerieEnX(serie, cfg, xObjetivo, { categorias = null, indiceCat = -1, tolX = 0 } = {}) {
+  if (!serie || !serie.puntos.length) return null;
+  if (categorias) {
+    const p = serie.porIndice?.get(indiceCat);
+    return p ? { x: indiceCat, y: p.y, exacto: true } : null;
+  }
+  if (!Number.isFinite(xObjetivo)) return null;
+
+  const tipo = tipoDeSerie(serie, cfg);
+  const eps = Math.max(1e-12, Math.abs(xObjetivo) * 1e-12);
+
+  // Coincidencia exacta o punto más cercano.
+  let cercano = null;
+  let minDist = Infinity;
+  if (serie.puntosX) {
+    const arr = serie.puntosX;
+    let lo = 0;
+    let hi = arr.length - 1;
+    while (lo <= hi) {
+      const mid = (lo + hi) >> 1;
+      if (arr[mid].x <= xObjetivo) lo = mid + 1;
+      else hi = mid - 1;
+    }
+    for (const idx of [hi, lo]) {
+      if (idx >= 0 && idx < arr.length) {
+        const d = Math.abs(arr[idx].x - xObjetivo);
+        if (d < minDist) {
+          minDist = d;
+          cercano = arr[idx];
+        }
+      }
+    }
+  } else {
+    for (const p of serie.puntos) {
+      const d = Math.abs(p.x - xObjetivo);
+      if (d < minDist) {
+        minDist = d;
+        cercano = p;
+      }
+    }
+  }
+
+  if (cercano && minDist <= eps) {
+    return { x: cercano.x, y: cercano.y, exacto: true };
+  }
+
+  if (tipo === "linea" && serie.puntosX && serie.puntosX.length >= 2) {
+    const arr = serie.puntosX;
+    if (xObjetivo >= arr[0].x - eps && xObjetivo <= arr[arr.length - 1].x + eps) {
+      let lo = 0;
+      let hi = arr.length - 1;
+      while (lo <= hi) {
+        const mid = (lo + hi) >> 1;
+        if (arr[mid].x <= xObjetivo) lo = mid + 1;
+        else hi = mid - 1;
+      }
+      const izq = arr[Math.max(0, hi)];
+      const der = arr[Math.min(arr.length - 1, lo)];
+      if (izq && der && !der.salto) {
+        if (der.x <= izq.x) return { x: xObjetivo, y: izq.y, exacto: false };
+        if (serie.escalon) return { x: xObjetivo, y: izq.y, exacto: false };
+        const t = (xObjetivo - izq.x) / (der.x - izq.x);
+        return { x: xObjetivo, y: izq.y + t * (der.y - izq.y), exacto: false };
+      }
+    }
+  }
+
+  if (tipo === "barra" && Number.isFinite(serie.anchoDatos) && serie.anchoDatos > 0) {
+    if (cercano && minDist <= serie.anchoDatos / 2 + 1e-9) {
+      return { x: cercano.x, y: cercano.y, exacto: true };
+    }
+    return null;
+  }
+
+  if (cercano && minDist <= tolX) {
+    return { x: cercano.x, y: cercano.y, exacto: true };
+  }
+  return null;
+}
+
 /** Muestra de leyenda que reproduce el trazo o el marcador de la serie, no solo su color. */
 function muestraLeyenda(serie, cfg) {
-  const tipo = serie.tipo || ({ barras: "barra", lineas: "linea", linea: "linea", dispersion: "dispersion" }[cfg.tipo] || cfg.tipo || "linea");
+  const tipo = tipoDeSerie(serie, cfg);
   const nodo = svg("svg", { class: "leyenda__trazo", viewBox: "0 0 26 10", width: 26, height: 10, "aria-hidden": "true" });
   if (tipo === "barra") nodo.append(svg("rect", { x: 7, y: 1, width: 12, height: 8, rx: 1.5, fill: serie.color, opacity: 0.85 }));
   else if (tipo === "dispersion") nodo.append(marcador(serie.forma, 13, 5, 3.2, { fill: serie.color }));
@@ -143,19 +280,52 @@ function muestraLeyenda(serie, cfg) {
   return nodo;
 }
 
-function resumenTabla(series, categorias) {
+export function resumenTabla(series, categorias = null, cfg = {}) {
   if (!series.length) return null;
-  const principal = series[0];
-  const n = Math.min(principal.puntos.length, series.length > 3 ? 120 : 250);
   const columnas = ["x", ...series.map((s) => s.nombre)];
   const filas = [];
-  const paso = Math.max(1, Math.floor(principal.puntos.length / n));
-  for (let i = 0; i < principal.puntos.length; i += paso) {
-    const base = principal.puntos[i];
-    const fila = [categorias?.[i] ?? base.x];
+  const maxFilas = series.length > 3 ? 120 : 250;
+
+  if (categorias) {
+    const paso = Math.max(1, Math.floor(categorias.length / maxFilas));
+    for (let i = 0; i < categorias.length; i += paso) {
+      const fila = [categorias[i]];
+      for (const s of series) {
+        const p = s.porIndice?.get(i);
+        fila.push(p ? p.y : null);
+      }
+      filas.push(fila);
+    }
+    return { columnas, filas };
+  }
+
+  const todosX = [];
+  for (const s of series) {
+    for (const p of s.puntos) todosX.push(p.x);
+  }
+  if (!todosX.length) return null;
+  todosX.sort((a, b) => a - b);
+  const [xMin, xMax] = [todosX[0], todosX[todosX.length - 1]];
+  const eps = Math.max(1e-12, (xMax - xMin) * 1e-12);
+  const unicos = [];
+  for (const x of todosX) {
+    if (!unicos.length || x - unicos[unicos.length - 1] > eps) unicos.push(x);
+  }
+
+  let xsTabla = unicos;
+  if (unicos.length > maxFilas) {
+    xsTabla = [];
+    const paso = (unicos.length - 1) / (maxFilas - 1);
+    for (let k = 0; k < maxFilas; k++) {
+      xsTabla.push(unicos[Math.round(k * paso)]);
+    }
+  }
+
+  for (const xVal of xsTabla) {
+    const fila = [xVal];
     for (const s of series) {
-      const p = s.puntos[i];
-      fila.push(p ? p.y : null);
+      const res = valorSerieEnX(s, cfg, xVal, { tolX: eps });
+      fila.push(res ? res.y : null);
     }
     filas.push(fila);
   }
@@ -181,8 +351,19 @@ export function dibujar(host, cfg = {}) {
     return;
   }
 
-  const ocultas = host._seriesOcultas instanceof Set ? host._seriesOcultas : new Set();
-  const visibles = seriesTodas.filter((s) => !ocultas.has(s.nombre));
+  const clavesValidas = new Set(seriesTodas.map((s) => s._clave));
+  const firmaSeries = seriesTodas.map((s) => s._clave).join("|");
+  let ocultas = host._seriesOcultas instanceof Set ? host._seriesOcultas : new Set();
+  if (host._firmaSeries !== firmaSeries) {
+    ocultas = new Set([...ocultas].filter((c) => clavesValidas.has(c)));
+    host._firmaSeries = firmaSeries;
+  }
+  let visibles = seriesTodas.filter((s) => !ocultas.has(s._clave));
+  if (!visibles.length) {
+    ocultas = new Set();
+    visibles = seriesTodas;
+  }
+  host._seriesOcultas = ocultas;
 
   const ancho = Math.max(300, Math.round(host.clientWidth || host.parentElement?.clientWidth || 680));
   const altura = Math.max(170, Number(cfg.altura) || 300);
@@ -203,24 +384,25 @@ export function dibujar(host, cfg = {}) {
     xMax = Math.max(0.5, categorias.length - 0.5);
   } else {
     /* Las barras con anchura en unidades del eje (histogramas) ocupan medio ancho a cada lado. */
-    const valoresX = visibles
-      .flatMap((s) => {
-        const medio = Number.isFinite(s.anchoDatos) && s.anchoDatos > 0 ? s.anchoDatos / 2 : 0;
-        return s.puntos.flatMap((p) => {
-          const v = numero(p.x);
-          return v === null ? [] : medio ? [v - medio, v + medio] : [v];
-        });
-      })
-      .filter((v) => v !== null);
-    xMin = Math.min(...valoresX);
-    xMax = Math.max(...valoresX);
+    const valoresX = [];
+    for (const s of seriesTodas) {
+      const medio = Number.isFinite(s.anchoDatos) && s.anchoDatos > 0 ? s.anchoDatos / 2 : 0;
+      for (const p of s.puntos) {
+        if (medio) {
+          valoresX.push(p.x - medio, p.x + medio);
+        } else {
+          valoresX.push(p.x);
+        }
+      }
+    }
+    [xMin, xMax] = minMax(valoresX);
   }
   if (cfg.dominioX) {
     [xMin, xMax] = cfg.dominioX;
   }
-  /* Zoom y desplazamiento: la vista se guarda en el contenedor y se descarta si cambian los datos. */
+  /* Zoom y desplazamiento: se conservan al conmutar la leyenda y se reinician si cambian los datos. */
   const xTotal = [xMin, xMax];
-  const firmaDatos = `${xMin}|${xMax}|${visibles.length}`;
+  const firmaDatos = `${xMin}|${xMax}|${seriesTodas.map((s) => `${s._clave}:${s.puntos.length}:${s.puntos[0]?.x}:${s.puntos.at(-1)?.x}`).join(",")}`;
   if (host._firmaVista !== firmaDatos) {
     host._vista = null;
     host._firmaVista = firmaDatos;
@@ -239,13 +421,26 @@ export function dibujar(host, cfg = {}) {
     xExt.ticks = xExt.ticks.filter((t) => t >= xMin && t <= xMax);
   }
 
-  let valoresY = visibles.flatMap((s) => s.puntos.map((p) => p.y));
+  let valoresY = [];
   if (ampliado) {
-    const dentro = visibles.flatMap((s) => s.puntos.filter((p) => numero(p.x) >= xMin && numero(p.x) <= xMax).map((p) => p.y));
-    if (dentro.length) valoresY = dentro;
+    for (const s of visibles) {
+      for (const p of s.puntos) {
+        if (p.x >= xMin && p.x <= xMax) valoresY.push(p.y);
+      }
+      if (tipoDeSerie(s, cfg) === "linea" && s.puntosX) {
+        const yIzq = valorSerieEnX(s, cfg, xMin, { tolX: 0 });
+        const yDer = valorSerieEnX(s, cfg, xMax, { tolX: 0 });
+        if (yIzq) valoresY.push(yIzq.y);
+        if (yDer) valoresY.push(yDer.y);
+      }
+    }
   }
-  let yMin = Math.min(...valoresY);
-  let yMax = Math.max(...valoresY);
+  if (!valoresY.length) {
+    for (const s of visibles) {
+      for (const p of s.puntos) valoresY.push(p.y);
+    }
+  }
+  let [yMin, yMax] = minMax(valoresY);
   if (cfg.yCero) {
     yMin = Math.min(0, yMin);
     yMax = Math.max(0, yMax);
@@ -272,6 +467,10 @@ export function dibujar(host, cfg = {}) {
   nodoSvg.append(clip);
   /* Las series se recortan al área de dibujo (necesario al ampliar). */
   const gSeries = svg("g", { "clip-path": `url(#${idClip})` });
+  const gFondos = svg("g");
+  const gLineas = svg("g");
+  const gPuntos = svg("g");
+  gSeries.append(gFondos, gLineas, gPuntos);
 
   /* Regiones de rechazo o bandas destacadas */
   for (const region of cfg.regiones || []) {
@@ -337,7 +536,7 @@ export function dibujar(host, cfg = {}) {
     ticksX = xExt.ticks.map((v) => ({ valor: v, etiqueta: formatearEje(v, cfg.formatoX) }));
   }
   for (const tick of ticksX) {
-    const x = categorias ? escX(tick.valor) : escX(tick.valor);
+    const x = escX(tick.valor);
     const texto = svg("text", {
       class: "eje-texto",
       x,
@@ -401,34 +600,50 @@ export function dibujar(host, cfg = {}) {
           .map(([x, y]) => `L${x.toFixed(2)} ${y.toFixed(2)}`)
           .join(" ") +
         " Z";
-      g.append(svg("path", { d, fill: cfg.banda.color || "var(--grafico-1)", opacity: "0.12" }));
+      gFondos.append(svg("path", { d, fill: cfg.banda.color || "var(--grafico-1)", opacity: "0.12" }));
     }
   }
 
-  /* Series */
-  const indiceActivo = { valor: -1 };
+  /* Series agrupadas por capas: fondos/barras -> líneas -> puntos */
+  const barrasAgrupables = visibles.filter(
+    (s) => tipoDeSerie(s, cfg) === "barra" && !(Number.isFinite(s.anchoDatos) && s.anchoDatos > 0)
+  );
+  const totalBarrasGrupo = barrasAgrupables.length;
+  const yBaseVal = Math.max(yExt.min, Math.min(yExt.max, 0));
+  const yBasePx = escY(yBaseVal);
+
   for (const serie of visibles) {
-    const tipo = serie.tipo || ({ barras: "barra", lineas: "linea", linea: "linea", dispersion: "dispersion" }[cfg.tipo] || cfg.tipo || "linea");
+    const tipo = tipoDeSerie(serie, cfg);
     if (tipo === "barra") {
       const anchoBase = categorias
         ? anchoPlot / Math.max(1, categorias.length)
         : Math.min(30, Math.max(2, anchoPlot / Math.max(1, serie.puntos.length) - 1.5));
+      const idxGrupo = barrasAgrupables.indexOf(serie);
+      const enDatos = !categorias && Number.isFinite(serie.anchoDatos) && serie.anchoDatos > 0;
       for (const p of serie.puntos) {
-        const xVal = categorias ? p.i : numero(p.x);
-        if (xVal === null) continue;
-        const x = escX(xVal);
+        const xVal = categorias ? p.i : p.x;
+        const xCentro = escX(xVal);
         const y = escY(p.y);
-        const base = escY(Math.max(yExt.min, 0));
-        const alto = base - y;
-        /* Histograma: la barra abarca exactamente su clase en el eje numérico, sin huecos. */
-        const enDatos = !categorias && Number.isFinite(serie.anchoDatos) && serie.anchoDatos > 0;
-        const w = enDatos
-          ? Math.max(1, escX(xVal + serie.anchoDatos / 2) - escX(xVal - serie.anchoDatos / 2) - 1)
-          : Math.max(1, anchoBase * (categorias ? 0.62 : 0.82));
-        gSeries.append(
+        const alto = yBasePx - y;
+        let w;
+        let xRect;
+        if (enDatos) {
+          w = Math.max(1, escX(xVal + serie.anchoDatos / 2) - escX(xVal - serie.anchoDatos / 2) - 1);
+          xRect = xCentro - w / 2;
+        } else if (totalBarrasGrupo > 1 && idxGrupo >= 0) {
+          const anchoGrupo = Math.max(4, anchoBase * (categorias ? 0.76 : 0.84));
+          const sep = anchoGrupo / totalBarrasGrupo > 5 ? 2 : 1;
+          w = Math.max(1.2, (anchoGrupo - sep * (totalBarrasGrupo - 1)) / totalBarrasGrupo);
+          const desplazamiento = (idxGrupo - (totalBarrasGrupo - 1) / 2) * (w + sep);
+          xRect = xCentro + desplazamiento - w / 2;
+        } else {
+          w = Math.max(1, anchoBase * (categorias ? 0.62 : 0.82));
+          xRect = xCentro - w / 2;
+        }
+        gFondos.append(
           svg("rect", {
-            x: x - w / 2,
-            y: alto >= 0 ? y : base,
+            x: xRect,
+            y: alto >= 0 ? y : yBasePx,
             width: w,
             height: Math.max(0.8, Math.abs(alto)),
             fill: serie.color,
@@ -439,9 +654,8 @@ export function dibujar(host, cfg = {}) {
       }
     } else if (tipo === "dispersion") {
       for (const p of serie.puntos) {
-        const xVal = categorias ? p.i : numero(p.x);
-        if (xVal === null) continue;
-        gSeries.append(
+        const xVal = categorias ? p.i : p.x;
+        gPuntos.append(
           marcador(
             serie.puntos.length > 500 ? "circulo" : serie.forma,
             escX(xVal),
@@ -452,33 +666,51 @@ export function dibujar(host, cfg = {}) {
         );
       }
     } else {
-      const puntos = serie.puntos
-        .map((p) => [escX(numero(p.x)), escY(p.y)])
-        .filter(([x]) => Number.isFinite(x));
+      const paresConHuecos = [];
+      const segmentos = [];
+      let segmentoActual = [];
+      for (const p of serie.puntos) {
+        const xVal = categorias ? p.i : p.x;
+        const px = escX(xVal);
+        const py = escY(p.y);
+        if (!Number.isFinite(px) || !Number.isFinite(py)) continue;
+        if (p.salto && segmentoActual.length) {
+          paresConHuecos.push([null, null]);
+          segmentos.push(segmentoActual);
+          segmentoActual = [];
+        }
+        const par = [px, py];
+        paresConHuecos.push(par);
+        segmentoActual.push(par);
+      }
+      if (segmentoActual.length) segmentos.push(segmentoActual);
+
       if (serie.relleno) {
-        const primero = puntos[0];
-        const ultimo = puntos[puntos.length - 1];
-        if (primero && ultimo) {
-          const base = escY(Math.max(yExt.min, 0));
-          const area =
-            `M${primero[0].toFixed(2)} ${base.toFixed(2)} L` +
-            puntos.map(([x, y]) => `${x.toFixed(2)} ${y.toFixed(2)}`).join(" L") +
-            ` L${ultimo[0].toFixed(2)} ${base.toFixed(2)} Z`;
-          gSeries.append(svg("path", { class: "serie-area", d: area, fill: serie.color }));
+        for (const seg of segmentos) {
+          const primero = seg[0];
+          const ultimo = seg[seg.length - 1];
+          if (primero && ultimo) {
+            const area =
+              `M${primero[0].toFixed(2)} ${yBasePx.toFixed(2)} L` +
+              seg.map(([x, y]) => `${x.toFixed(2)} ${y.toFixed(2)}`).join(" L") +
+              ` L${ultimo[0].toFixed(2)} ${yBasePx.toFixed(2)} Z`;
+            gFondos.append(svg("path", { class: "serie-area", d: area, fill: serie.color }));
+          }
         }
       }
-      gSeries.append(
+      gLineas.append(
         svg("path", {
           class: "serie-linea",
-          d: serie.escalon ? rutaEscalon(puntos) : rutaLinea(puntos),
+          d: serie.escalon ? rutaEscalon(paresConHuecos) : rutaLinea(paresConHuecos),
           stroke: serie.color,
           "stroke-dasharray": serie.trazo || null,
           "stroke-linejoin": serie.escalon ? "miter" : null,
         })
       );
-      if (serie.marcadores || (serie.escalon && puntos.length <= 60)) {
-        for (const [x, y] of puntos) {
-          gSeries.append(svg("circle", { cx: x, cy: y, r: 2.4, fill: serie.color, class: "serie-punto" }));
+      if (serie.marcadores || (serie.escalon && paresConHuecos.length <= 60)) {
+        for (const [x, y] of paresConHuecos) {
+          if (x === null || y === null) continue;
+          gPuntos.append(svg("circle", { cx: x, cy: y, r: 2.4, fill: serie.color, class: "serie-punto" }));
         }
       }
     }
@@ -501,20 +733,15 @@ export function dibujar(host, cfg = {}) {
           y2: margen.arriba + altoPlot,
         })
       );
-      const principal = visibles[0];
-      if (principal) {
-        let cercano = principal.puntos[0];
-        for (const p of principal.puntos) {
-          const valor = numero(p.x);
-          if (valor === null) continue;
-          if (!cercano || Math.abs(numero(p.x) - marcadorX) < Math.abs(numero(cercano.x) - marcadorX)) cercano = p;
-        }
-        if (cercano) {
+      const tolMarcador = (xExt.max - xExt.min) * 0.04;
+      for (const serie of visibles) {
+        const res = valorSerieEnX(serie, cfg, marcadorX, { tolX: tolMarcador });
+        if (res) {
           g.append(
             svg("circle", {
               class: "marcador-punto",
               cx: escX(marcadorX),
-              cy: escY(cercano.y),
+              cy: escY(res.y),
               r: 4,
             })
           );
@@ -555,17 +782,47 @@ export function dibujar(host, cfg = {}) {
   const globo = el("div", { class: "globo", role: "status", "aria-live": "off" });
   host.append(globo);
 
-  const principal = visibles[0];
-  const mostrarGlobo = (punto, indice) => {
-    if (!punto) {
-      globo.dataset.visible = "false";
-      cruz.setAttribute("opacity", "0");
-      return;
-    }
-    const filas = [];
+  let paradas;
+  if (categorias) {
+    paradas = categorias.map((_, i) => i);
+  } else {
+    const xsTodos = [];
     for (const serie of visibles) {
-      const p = serie.puntos[indice];
-      if (!p) continue;
+      for (const p of serie.puntos) {
+        if (p.x >= xExt.min - 1e-12 && p.x <= xExt.max + 1e-12) xsTodos.push(p.x);
+      }
+    }
+    xsTodos.sort((a, b) => a - b);
+    const epsParada = Math.max(1e-12, (xExt.max - xExt.min) * 1e-9);
+    paradas = [];
+    for (const x of xsTodos) {
+      if (!paradas.length || x - paradas[paradas.length - 1] > epsParada) paradas.push(x);
+    }
+  }
+  const indiceActivo = { valor: -1 };
+  const tolPxX = ((xExt.max - xExt.min) / Math.max(1, anchoPlot)) * 14;
+
+  const mostrarGloboEn = (xObjetivo, { pyCursor = null, indiceCat = -1 } = {}) => {
+    const filas = [];
+    let yRefPx = null;
+    let mejorDistY = Infinity;
+    for (const serie of visibles) {
+      const valor = valorSerieEnX(serie, cfg, xObjetivo, {
+        categorias,
+        indiceCat,
+        tolX: tolPxX,
+      });
+      if (!valor) continue;
+      const yPx = escY(valor.y);
+      if (pyCursor !== null) {
+        const d = Math.abs(yPx - pyCursor);
+        if (d < mejorDistY) {
+          mejorDistY = d;
+          yRefPx = yPx;
+        }
+      } else if (yRefPx === null) {
+        yRefPx = yPx;
+      }
       filas.push(
         el(
           "div",
@@ -576,47 +833,100 @@ export function dibujar(host, cfg = {}) {
             el("span", { class: "globo__color", style: { background: serie.color } }),
             serie.nombre
           ),
-          el("span", { class: "globo__valor" }, fmtNum(p.y, { decimales: 5 }))
+          el("span", { class: "globo__valor" }, fmtNum(valor.y, { decimales: 5 }))
         )
       );
     }
-    globo.replaceChildren(
-      el("div", { class: "globo__titulo" }, categorias?.[indice] ?? `x = ${fmtNum(punto.x, { decimales: 4 })}`),
-      ...filas
-    );
-    const xPx = escX(categorias ? indice : numero(punto.x));
+    if (!filas.length) {
+      globo.dataset.visible = "false";
+      cruz.setAttribute("opacity", "0");
+      return;
+    }
+    const titulo = categorias ? categorias[indiceCat] : `x = ${fmtNum(xObjetivo, { decimales: 4 })}`;
+    globo.replaceChildren(el("div", { class: "globo__titulo" }, titulo), ...filas);
+    const xPx = escX(categorias ? indiceCat : xObjetivo);
     globo.dataset.visible = "true";
-    globo.style.left = `${Math.max(70, Math.min(ancho - 70, xPx))}px`;
-    globo.style.top = `${Math.max(34, escY(punto.y))}px`;
+    const anchoGlobo = globo.offsetWidth || 160;
+    const altoGlobo = globo.offsetHeight || 64;
+    const mitad = anchoGlobo / 2;
+    globo.style.left = `${Math.max(mitad + 4, Math.min(ancho - mitad - 4, xPx))}px`;
+    const baseY = yRefPx ?? margen.arriba + altoPlot / 2;
+    if (baseY - altoGlobo - 10 < 4) {
+      globo.style.top = `${Math.min(altura - 8, baseY + altoGlobo + 14)}px`;
+    } else {
+      globo.style.top = `${Math.max(altoGlobo + 4, baseY - 6)}px`;
+    }
     cruz.setAttribute("x1", xPx);
     cruz.setAttribute("x2", xPx);
     cruz.setAttribute("opacity", "1");
   };
 
   const alMover = (evento) => {
-    if (!principal) return;
+    if (!visibles.length) return;
     const rect = nodoSvg.getBoundingClientRect();
     const px = ((evento.clientX - rect.left) / rect.width) * ancho;
-    let indice = -1;
+    const py = ((evento.clientY - rect.top) / rect.height) * altura;
     if (categorias) {
-      indice = Math.round(((px - margen.izquierda) / anchoPlot) * (xExt.max - xExt.min) + xExt.min);
-      indice = Math.max(0, Math.min(principal.puntos.length - 1, indice));
-    } else {
-      const xValor = xExt.min + ((px - margen.izquierda) / anchoPlot) * (xExt.max - xExt.min);
-      let menor = Infinity;
-      principal.puntos.forEach((p, i) => {
-        const valor = numero(p.x);
-        if (valor === null) return;
-        const distancia = Math.abs(valor - xValor);
-        if (distancia < menor) {
-          menor = distancia;
-          indice = i;
-        }
-      });
+      const indice = Math.max(0, Math.min(categorias.length - 1, Math.round(((px - margen.izquierda) / anchoPlot) * (xExt.max - xExt.min) + xExt.min)));
+      mostrarGloboEn(indice, { pyCursor: py, indiceCat: indice });
+      indiceActivo.valor = indice;
+      return;
     }
-    const punto = principal.puntos[indice];
-    if (punto) mostrarGlobo(punto, indice);
-    indiceActivo.valor = indice;
+
+    const xCursor = xExt.min + ((px - margen.izquierda) / anchoPlot) * (xExt.max - xExt.min);
+    let mejorPunto = null;
+    let mejorDist2 = Infinity;
+    let puntoMasCercanoX = null;
+    let menorDx = Infinity;
+
+    for (const serie of visibles) {
+      for (const p of serie.puntos) {
+        if (p.x < xExt.min || p.x > xExt.max) continue;
+        const pPx = escX(p.x);
+        const pPy = escY(p.y);
+        const dx = Math.abs(pPx - px);
+        const dy = Math.abs(pPy - py);
+        if (dx < menorDx) {
+          menorDx = dx;
+          puntoMasCercanoX = p;
+        }
+        const d2 = dx * dx + dy * dy;
+        if (dx <= 14 && d2 < mejorDist2) {
+          mejorDist2 = d2;
+          mejorPunto = p;
+        }
+      }
+    }
+
+    let xObjetivo = null;
+    if (mejorPunto && Math.abs(escX(mejorPunto.x) - px) <= 9) {
+      xObjetivo = mejorPunto.x;
+    } else {
+      const hayLineaEnCursor = visibles.some(
+        (s) => tipoDeSerie(s, cfg) === "linea" && valorSerieEnX(s, cfg, xCursor, { tolX: 0 }) !== null
+      );
+      if (hayLineaEnCursor) xObjetivo = xCursor;
+      else if (puntoMasCercanoX) xObjetivo = puntoMasCercanoX.x;
+    }
+
+    if (xObjetivo === null) {
+      globo.dataset.visible = "false";
+      cruz.setAttribute("opacity", "0");
+      return;
+    }
+    mostrarGloboEn(xObjetivo, { pyCursor: py });
+    if (paradas.length) {
+      let idx = 0;
+      let dMin = Infinity;
+      for (let i = 0; i < paradas.length; i++) {
+        const d = Math.abs(paradas[i] - xObjetivo);
+        if (d < dMin) {
+          dMin = d;
+          idx = i;
+        }
+      }
+      indiceActivo.valor = idx;
+    }
   };
 
   capa.addEventListener("pointermove", alMover);
@@ -690,18 +1000,18 @@ export function dibujar(host, cfg = {}) {
         return;
       }
     }
-    if (!principal) return;
+    if (!paradas.length) return;
     let indice = indiceActivo.valor;
-    if (evento.key === "ArrowRight") indice = Math.min(principal.puntos.length - 1, indice + 1);
-    else if (evento.key === "ArrowLeft") indice = Math.max(0, indice - 1);
+    if (evento.key === "ArrowRight") indice = Math.min(paradas.length - 1, indice + 1);
+    else if (evento.key === "ArrowLeft") indice = Math.max(0, indice <= 0 ? 0 : indice - 1);
     else if (evento.key === "Home") indice = 0;
-    else if (evento.key === "End") indice = principal.puntos.length - 1;
+    else if (evento.key === "End") indice = paradas.length - 1;
     else return;
     evento.preventDefault();
     indiceActivo.valor = indice;
     // Solo con teclado se anuncia el valor: con el ratón sería un torrente de lecturas.
     globo.setAttribute("aria-live", "polite");
-    mostrarGlobo(principal.puntos[indice], indice);
+    mostrarGloboEn(paradas[indice], { indiceCat: categorias ? indice : -1 });
   });
   capa.addEventListener("pointerenter", () => globo.setAttribute("aria-live", "off"));
 
@@ -709,7 +1019,7 @@ export function dibujar(host, cfg = {}) {
   if (seriesTodas.length > 1 || seriesTodas[0].nombre) {
     const leyenda = el("div", { class: "leyenda" });
     for (const serie of seriesTodas) {
-      const activa = !ocultas.has(serie.nombre);
+      const activa = !ocultas.has(serie._clave);
       const item = el(
         "button",
         {
@@ -718,8 +1028,8 @@ export function dibujar(host, cfg = {}) {
           "data-apagada": String(!activa),
           "aria-pressed": String(activa),
           onClick: () => {
-            if (ocultas.has(serie.nombre)) ocultas.delete(serie.nombre);
-            else if (visibles.length > 1) ocultas.add(serie.nombre);
+            if (ocultas.has(serie._clave)) ocultas.delete(serie._clave);
+            else if (visibles.length > 1) ocultas.add(serie._clave);
             else return;
             host._seriesOcultas = ocultas;
             dibujar(host, cfg);
@@ -752,7 +1062,7 @@ export function dibujar(host, cfg = {}) {
 
   /* Tabla de datos equivalente */
   if (cfg.tabla !== false) {
-    const resumen = resumenTabla(seriesTodas, categorias);
+    const resumen = resumenTabla(seriesTodas, categorias, cfg);
     if (resumen) {
       const details = el("details", { class: "chart-datos" });
       details.append(el("summary", {}, "Ver datos del gráfico"));
@@ -828,8 +1138,7 @@ export function graficoCaja(host, datos) {
     ...(datos.atipicos || []),
   ].map(numero).filter((v) => v !== null);
   if (!valores.length) return;
-  let min = Math.min(...valores);
-  let max = Math.max(...valores);
+  let [min, max] = minMax(valores);
   if (min === max) {
     min -= 1;
     max += 1;
@@ -952,8 +1261,7 @@ export function graficoCaja(host, datos) {
 export function calcularHistograma(valores, bins = null) {
   const nums = (valores || []).map(numero).filter((v) => v !== null);
   if (!nums.length) return null;
-  let min = Math.min(...nums);
-  let max = Math.max(...nums);
+  let [min, max] = minMax(nums);
   if (min === max) {
     min -= 0.5;
     max += 0.5;

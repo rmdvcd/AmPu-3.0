@@ -75,6 +75,23 @@ function crearGuia(irA) {
       el("p", {}, "Separa los valores con espacios, saltos de línea o punto y coma. Evita «1,2,3»: es ambiguo. La vista previa te muestra lo que se ha leído.")
     ),
     el("div", { class: "ayuda__recursos" },
+      el("button", {
+        class: "ayuda-recurso",
+        type: "button",
+        onClick: async () => {
+          irA("inicio");
+          try {
+            const { abrirWalkthroughDesdeInicio } = await import("./walkthrough.js");
+            await abrirWalkthroughDesdeInicio({ enfocar: true });
+          } catch {
+            /* carga opcional */
+          }
+        },
+      },
+        el("span", { class: "ayuda-recurso__icono" }, icono("chispa", { tamano: 20 })),
+        el("span", { class: "ayuda-recurso__texto" }, el("strong", {}, "Recorrido guiado"), el("span", {}, "Repasa cada componente paso a paso.")),
+        icono("flecha-derecha", { tamano: 16 })
+      ),
       recurso("teoria", "Explorar la teoría", "Conecta cada resultado con su explicación.", "teoria"),
       recurso("ajustes", "Abrir ajustes", "Tema, formato numérico y datos guardados.", "ajustes")
     ),

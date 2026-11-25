@@ -1247,6 +1247,7 @@ export function modal({
   });
   (document.getElementById("raiz-modal") || document.body).append(dialogo);
   dialogo.showModal();
+  window.dispatchEvent(new CustomEvent("ampu:dialogo"));
   temporizadorFoco = setTimeout(() => {
     if (cerrado || !dialogo.open) return;
     const enfocable = cuerpo.querySelector("input:not([type=hidden]), textarea, select, button");

@@ -9,6 +9,7 @@ import { config } from "./ui.js";
 const CLAVE_PREFS = "ampu.prefs.v1";
 const CLAVE_HISTORIAL = "ampu.historial.v1";
 const CLAVE_MODELOS = "ampu.modelos.v1";
+const CLAVE_WALKTHROUGH = "ampu.walkthrough.v1";
 
 export const PREFERENCIAS_POR_DEFECTO = {
   tema: "sistema",
@@ -59,7 +60,7 @@ sanearPrefs();
 /* ------------------------------------------------------------------ */
 
 export function sistemaOscuro() {
-  return window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
+  return typeof window !== "undefined" && window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
 }
 
 export function temaResuelto(tema = prefs.tema) {
@@ -144,7 +145,7 @@ export async function inicializarPreferencias() {
   return prefs;
 }
 
-if (window.matchMedia) {
+if (typeof window !== "undefined" && window.matchMedia) {
   const consulta = window.matchMedia("(prefers-color-scheme: dark)");
   const alCambiar = () => {
     if (prefs.tema === "sistema") aplicarPreferenciasVisuales();
@@ -305,6 +306,34 @@ export function recordarModelo(clave) {
   const datos = leerModelos();
   datos.__ultimo = clave;
   escribirJson(CLAVE_MODELOS, datos);
+}
+
+/* ------------------------------------------------------------------ */
+/* Recorrido inicial                                                   */
+/* ------------------------------------------------------------------ */
+
+export function almacenamientoDisponible() {
+  try {
+    const clave = "__ampu_prueba__";
+    localStorage.setItem(clave, "1");
+    localStorage.removeItem(clave);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export function walkthroughCompletado() {
+  return Boolean(leerJson(CLAVE_WALKTHROUGH, null));
+}
+
+export function marcarWalkthroughCompletado(datos = {}) {
+  escribirJson(CLAVE_WALKTHROUGH, {
+    completado: true,
+    version: 1,
+    fecha: new Date().toISOString(),
+    ...datos,
+  });
 }
 
 /* ------------------------------------------------------------------ */
