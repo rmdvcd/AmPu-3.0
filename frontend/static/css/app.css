@@ -2422,11 +2422,18 @@ dialog.modal--ayuda {
   padding: 16px 18px;
   overscroll-behavior: contain;
 }
+
+.ventana__cuerpo > * {
+  min-width: 0;
+  max-width: 100%;
+}
+
 .ventana__cuerpo .lectura-dialogo {
   width: 100%;
   max-width: 72ch;
   margin-inline: auto;
 }
+
 .ventana__cuerpo .lectura-dialogo > .articulo-cabecera {
   margin-bottom: 16px;
 }
@@ -2441,7 +2448,14 @@ dialog.modal--ayuda {
   background: var(--superficie-2);
   flex: 0 0 auto;
   flex-wrap: wrap;
+  min-width: 0;
 }
+
+.ventana__pie > * {
+  min-width: 0;
+  max-width: 100%;
+}
+
 .ventana__pie[hidden] { display: none !important; }
 
 /* Bordes y esquinas de redimensionado */
@@ -2483,8 +2497,6 @@ dialog.modal--ayuda {
   transition: opacity var(--transicion);
 }
 .ventana__borde--se:hover .ventana__agarre { opacity: 0.95; }
-
-/* Dock inferior de ventanas abiertas / minimizadas */
 .barra-ventanas {
   position: fixed;
   left: 50%;
